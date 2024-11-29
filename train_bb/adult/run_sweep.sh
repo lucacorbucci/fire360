@@ -15,8 +15,8 @@ run_sweep_and_agent () {
   rm temp_output.txt
   
   # Run the wandb agent command
-  poetry run wandb agent $SWEEP_ID --project "$PROJECT_NAME" --count 100
+  poetry run wandb agent $SWEEP_ID --project "$PROJECT_NAME" --count 30
 }
 
 
-run_sweep_and_agent "pima_model"
+run_sweep_and_agent "adult_model"
