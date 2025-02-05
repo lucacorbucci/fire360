@@ -14,6 +14,7 @@ import wandb
 from sklearn.metrics import f1_score
 from tqdm.auto import tqdm
 
+from bb_architectures import SimpleModel
 from utils import get_optimizer, prepare_data
 
 warnings.simplefilter("ignore")
@@ -42,18 +43,6 @@ def signal_handler(sig, frame):
     if wandb_run:
         wandb_run.finish()
     sys.exit(0)
-
-
-class SimpleModel(nn.Module):
-    def __init__(self, input_size, output_size):
-        super(SimpleModel, self).__init__()
-        self.layer1 = nn.Linear(input_size, 32)
-        self.layer2 = nn.Linear(32, output_size)
-
-    def forward(self, x):
-        x = F.relu(self.layer1(x.float()))
-        x = self.layer2(x)
-        return x
 
 
 class NeuralNetwork(nn.Module):
