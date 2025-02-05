@@ -1,1 +1,1 @@
-poetry run python /home/lcorbucci/personalized_explanations/train_bb/breast_cancer/../../train_bb.py --batch_size=64 --lr=0.018982332642156763 --optimizer=adam --epochs 10 --project_name Tango_personalization --dataset_name breast_cancer --save_model True --model_name breast_cancer_bb
+uv run python /home/lcorbucci/personalized_explanations/train_bb/breast_cancer/../../train_bb.py --batch_size=64 --lr=0.018982332642156763 --optimizer=adam --epochs 10 --project_name Tango_personalization --dataset_name breast_cancer --save_model True --model_name breast_cancer_bb

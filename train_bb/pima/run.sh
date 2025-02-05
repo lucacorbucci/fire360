@@ -1,1 +1,1 @@
-poetry run python /home/lcorbucci/personalized_explanations/train_bb/pima/../../train_bb.py --batch_size=21 --lr=0.0039924430434395 --optimizer=adam --epochs 10 --project_name Tango_personalization --dataset_name pima --save_model True --model_name model
+uv run python /home/lcorbucci/personalized_explanations/train_bb/pima/../../train_bb.py --batch_size=21 --lr=0.0039924430434395 --optimizer=adam --epochs 10 --project_name Tango_personalization --dataset_name pima --save_model True --model_name model

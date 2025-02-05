@@ -1,1 +1,1 @@
-poetry run python /home/lcorbucci/personalized_explanations/train_bb/diabetes/../../train_bb.py --batch_size=1009 --lr=0.01637433436062934 --optimizer=adam --epochs 10 --project_name Tango_personalization --dataset_name diabetes --save_model True --model_name diabetes_bb
+uv run python /home/lcorbucci/personalized_explanations/train_bb/diabetes/../../train_bb.py --batch_size=1009 --lr=0.01637433436062934 --optimizer=adam --epochs 10 --project_name Tango_personalization --dataset_name diabetes --save_model True --model_name diabetes_bb

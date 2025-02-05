@@ -1,0 +1,1 @@
+uv run python /home/lcorbucci/personalized_explanations/train_bb/dutch/../../train_bb.py --batch_size=50 --lr=0.009380641914751766 --optimizer=adam --epochs 10 --sweep True --project_name Tango_personalization --dataset_name dutch --save_model True --model_name dutch_BB

@@ -1,0 +1,1 @@
+uv run python ../../synthetic_data.py --dataset_name dutch --samples_to_generate 10000 25000 50000 75000 100000 150000 200000  --synthesizer_name ctgan --epochs 1000 2500 5000 --store_path ../../artifacts/
