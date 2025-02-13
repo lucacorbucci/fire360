@@ -22,7 +22,7 @@ parameters:
 
 command:
   - ${env}
-  - poetry 
+  - uv 
   - run 
   - python
   - ${program}

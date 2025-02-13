@@ -1,0 +1,1 @@
+uv run python ../../synthetic_data.py --dataset_name covertype --samples_to_generate 200000 400 000 600000 --synthesizer_name tvae --epochs 1000 2500 5000 --store_path ../../artifacts/

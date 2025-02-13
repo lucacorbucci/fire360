@@ -1,0 +1,1 @@
+uv run python /home/lcorbucci/personalized_explanations/train_bb/adult/../../train_bb.py --batch_size=59 --lr=0.03706758980843329 --optimizer=adam --epochs 10  --project_name Tango_personalization --dataset_name adult

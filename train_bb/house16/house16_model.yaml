@@ -30,4 +30,4 @@ command:
   - --project_name
   - Tango_personalization
   - --dataset_name
-  - breast_cancer
+  - house16
