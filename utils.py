@@ -1,14 +1,12 @@
+import argparse
 import copy
-import random
-import time
 from collections import Counter
 from pathlib import Path
 
-import dill
 import numpy as np
 import pandas as pd
 import torch
-import torch.optim as optim
+from datasets import load_dataset
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from scipy.io import arff
@@ -17,57 +15,34 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import (
     LabelEncoder,
     MinMaxScaler,
-    OneHotEncoder,
     StandardScaler,
 )
+from torch import optim
 from torch.utils.data import (
-    BatchSampler,
     DataLoader,
-    Dataset,
-    RandomSampler,
     TensorDataset,
 )
 
 
-def get_optimizer(optimizer, model, lr):
+def get_optimizer(optimizer: str, model: torch.nn.Module, lr: float) -> optim.Optimizer:
     if optimizer == "adam":
         return optim.Adam(model.parameters(), lr=lr)
-    elif optimizer == "sgd":
+    if optimizer == "sgd":
         return optim.SGD(model.parameters(), lr=lr)
-    else:
-        raise ValueError("Optimizer not recognized")
-
-
-def dataset_to_numpy(
-    _df,
-    _feature_cols: list,
-    _metadata: dict,
-):
-    """Args:
-    _df: pandas dataframe
-    _feature_cols: list of feature column names
-    _metadata: dictionary with metadata
-    num_sensitive_features: number of sensitive features to use
-    sensitive_features_last: if True, then sensitive features are encoded as last columns
-    """
-
-    # transform features to 1-hot
-    _X = _df[_feature_cols]
-    # take sensitive features separately
-    if "dummy_cols" in _metadata.keys():
-        dummy_cols = _metadata["dummy_cols"]
-    else:
-        dummy_cols = None
-    _X2 = pd.get_dummies(_X, columns=dummy_cols, drop_first=False)
-    # esc = MinMaxScaler()
-    # _X = esc.fit_transform(_X2)
-
-    return _X
+    msg = "Optimizer not recognized"
+    raise ValueError(msg)
 
 
 def create_torch_loader(
-    sweep, batch_size, x_train, x_val, x_test, y_train, y_val, y_test
-):
+    sweep: bool,
+    batch_size: int,
+    x_train: np.ndarray,
+    x_val: np.ndarray,
+    x_test: np.ndarray,
+    y_train: np.ndarray,
+    y_val: np.ndarray,
+    y_test: np.ndarray,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
     x_train_tensor = torch.tensor(x_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
     x_test_tensor = torch.tensor(x_test, dtype=torch.float32)
@@ -91,24 +66,32 @@ def create_torch_loader(
     return train_loader, val_loader, test_loader
 
 
-def prepare_pima(sweep, seed, current_path, validation_seed=None):
+def prepare_pima(
+    sweep: bool,
+    seed: int,
+    current_path: Path,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
     file_path = current_path / "data/pima/pima.csv"
     df = pd.read_csv(file_path)
     y = df["Outcome"]
     X = df.drop(columns=["Outcome"])
 
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+
+    train_df = copy.copy(x_train)
+    train_df["Outcome"] = y_train
+    test_df = copy.copy(x_test)
+    test_df["Outcome"] = y_test
+
     columns_with_zeros = ["Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
     imputer = SimpleImputer(missing_values=0, strategy="mean")
-    X[columns_with_zeros] = imputer.fit_transform(X[columns_with_zeros])
+    x_train[columns_with_zeros] = imputer.fit_transform(x_train[columns_with_zeros])
+    x_test[columns_with_zeros] = imputer.transform(x_test[columns_with_zeros])
+
     scaler = StandardScaler()
-    X = scaler.fit_transform(X)
-
-    x_train, x_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=seed, stratify=y
-    )
-
-    train_df = None
-    test_df = None
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
 
     if sweep:
         x_train, x_val, y_train, y_val = train_test_split(
@@ -138,7 +121,12 @@ def prepare_pima(sweep, seed, current_path, validation_seed=None):
     return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
 
 
-def prepare_brest_cancer(sweep, seed, current_path, validation_seed=None):
+def prepare_breast_cancer(
+    sweep: bool,
+    seed: int,
+    current_path: Path,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
     file_path = current_path / "data/breast_cancer/breast_cancer.csv"
     df = pd.read_csv(file_path)
     encoder = LabelEncoder()
@@ -152,6 +140,8 @@ def prepare_brest_cancer(sweep, seed, current_path, validation_seed=None):
 
     train_df = copy.copy(x_train)
     train_df["Status"] = y_train
+    test_df = copy.copy(x_test)
+    test_df["Status"] = y_test
 
     if sweep:
         x_train, x_val, y_train, y_val = train_test_split(
@@ -173,10 +163,15 @@ def prepare_brest_cancer(sweep, seed, current_path, validation_seed=None):
         y_val = None
     y_test = y_test.values
 
-    return x_train, x_val, x_test, y_train, y_val, y_test, train_df
+    return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
 
 
-def prepare_diabetes(sweep, seed, current_path, validation_seed=None):
+def prepare_diabetes(
+    sweep: bool,
+    seed: int,
+    current_path: Path,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
     file_path = current_path / "data/diabetes/diabetic_data.csv"
     df = pd.read_csv(file_path)
 
@@ -224,9 +219,7 @@ def prepare_diabetes(sweep, seed, current_path, validation_seed=None):
     X = scaler.fit_transform(X)
     y = scaler.transform(y)
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=seed, stratify=y
-    )
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
 
     if sweep:
         x_train, x_val, y_train, y_val = train_test_split(
@@ -254,11 +247,11 @@ def prepare_diabetes(sweep, seed, current_path, validation_seed=None):
 
 
 def prepare_adult(
-    sweep,
-    seed,
-    current_path,
-    validation_seed=None,
-):
+    sweep: bool,
+    seed: int,
+    current_path: Path,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
     adult_feat_cols = [
         "age",
         "workclass",
@@ -299,11 +292,14 @@ def prepare_adult(
 
     file_path = current_path / "data/adult/adult.data"
     df_adult = pd.read_csv(file_path, names=adult_columns_names)
+
+    # handle missing values
+    imputer = SimpleImputer(strategy="most_frequent")
+    df_adult = imputer.fit_transform(df_adult)
+
     df_adult["sex_binary"] = np.where(df_adult["sex"] == " Male", 1, 0)
     df_adult["race_binary"] = np.where(df_adult["race"] == " White", 1, 0)
-    df_adult["age_binary"] = np.where(
-        (df_adult["age"] > 25) & (df_adult["age"] < 60), 1, 0
-    )
+    df_adult["age_binary"] = np.where((df_adult["age"] > 25) & (df_adult["age"] < 60), 1, 0)
 
     y = np.zeros(len(df_adult))
 
@@ -318,9 +314,7 @@ def prepare_adult(
 
     df_adult = pd.get_dummies(df_adult, columns=None, drop_first=False)
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        df_adult, y, test_size=0.2, random_state=seed, stratify=y
-    )
+    x_train, x_test, y_train, y_test = train_test_split(df_adult, y, test_size=0.2, random_state=seed, stratify=y)
 
     train_df = df_adult_original.loc[x_train.index]
     test_df = df_adult_original.loc[x_test.index]
@@ -344,7 +338,12 @@ def prepare_adult(
     return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
 
 
-def prepare_dutch(sweep, seed, current_path, validation_seed=None):
+def prepare_dutch(
+    sweep: bool,
+    seed: int,
+    current_path: Path,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
     file_path = current_path / "data/dutch/dutch_census.arff"
     data = arff.loadarff(file_path)
     dutch_df = pd.DataFrame(data[0]).astype("int32")
@@ -356,29 +355,20 @@ def prepare_dutch(sweep, seed, current_path, validation_seed=None):
     del dutch_df["occupation"]
 
     y = dutch_df["occupation_binary"].astype(int).values
+    del dutch_df["occupation_binary"]
 
-    dutch_df_feature_columns = [
-        "age",
-        "household_position",
-        "household_size",
-        "prev_residence_place",
-        "citizenship",
-        "country_birth",
-        "edu_level",
-        "economic_status",
-        "cur_eco_activity",
-        "Marital_status",
-        "sex_binary",
-    ]
+    dutch_df = pd.get_dummies(dutch_df, columns=None, drop_first=False)
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        dutch_df, y, test_size=0.2, random_state=seed, stratify=y
-    )
+    x_train, x_test, y_train, y_test = train_test_split(dutch_df, y, test_size=0.2, random_state=seed, stratify=y)
 
     train_df = copy.copy(x_train)
     train_df["occupation_binary"] = y_train
     test_df = copy.copy(x_test)
     test_df["occupation_binary"] = y_test
+
+    scaler = MinMaxScaler()
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
 
     if sweep:
         x_train, x_val, y_train, y_val = train_test_split(
@@ -392,49 +382,197 @@ def prepare_dutch(sweep, seed, current_path, validation_seed=None):
         x_val = None
         y_val = None
 
-    x_train = dataset_to_numpy(
-        x_train, dutch_df_feature_columns, {"target_variable": "occupation_binary"}
-    )
-    x_test = dataset_to_numpy(
-        x_test, dutch_df_feature_columns, {"target_variable": "occupation_binary"}
-    )
-
-    if x_val is not None:
-        x_val = dataset_to_numpy(
-            x_val, dutch_df_feature_columns, {"target_variable": "occupation_binary"}
-        )
-
     return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
 
 
-def prepare_data(args, current_path) -> (DataLoader, DataLoader, DataLoader):
-    # Load and split data
+def prepare_house16(
+    sweep: bool,
+    seed: int,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
+    dataset = load_dataset("mstz/house16", "house16")["train"]
+    df = pd.DataFrame(dataset)
+    y = df["class"].astype(int).values
+    X = df.drop(columns=["class"])
 
-    if args.dataset_name == "breast_cancer":
-        x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_brest_cancer(
-            args.sweep, args.seed, current_path, args.validation_seed
-        )
-    elif args.dataset_name == "pima":
-        x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_pima(
-            args.sweep, args.seed, current_path, args.validation_seed
-        )
-    elif args.dataset_name == "diabetes":
-        x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_diabetes(
-            args.sweep, args.seed, current_path, args.validation_seed
-        )
-    elif args.dataset_name == "adult":
-        x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_adult(
-            args.sweep,
-            args.seed,
-            current_path,
-            args.validation_seed,
-        )
-    elif args.dataset_name == "dutch":
-        x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_dutch(
-            args.sweep, args.seed, current_path, args.validation_seed
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+
+    train_df = copy.copy(x_train)
+    train_df["class"] = y_train
+    test_df = copy.copy(x_test)
+    test_df["class"] = y_test
+
+    scaler = MinMaxScaler()
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
+
+    if sweep:
+        x_train, x_val, y_train, y_val = train_test_split(
+            x_train,
+            y_train,
+            test_size=0.2,
+            random_state=validation_seed,
+            stratify=y_train,
         )
     else:
-        raise ValueError("Dataset not recognized")
+        x_val = None
+        y_val = None
+    return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
+
+
+def prepare_letter(
+    sweep: bool,
+    seed: int,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
+    dataset = load_dataset("mstz/letter", "letter")["train"]
+    df = pd.DataFrame(dataset)
+    y = df["letter"].astype(int).values
+    X = df.drop(columns=["letter"])
+
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+
+    train_df = copy.copy(x_train)
+    train_df["letter"] = y_train
+    test_df = copy.copy(x_test)
+    test_df["letter"] = y_test
+
+    scaler = MinMaxScaler()
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
+
+    if sweep:
+        x_train, x_val, y_train, y_val = train_test_split(
+            x_train,
+            y_train,
+            test_size=0.2,
+            random_state=validation_seed,
+            stratify=y_train,
+        )
+    else:
+        x_val = None
+        y_val = None
+    return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
+
+
+def prepare_covertype(
+    sweep: bool,
+    seed: int,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
+    dataset = load_dataset("mstz/covertype", "covertype")["train"]
+    df = pd.DataFrame(dataset)
+    y = df["cover_type"].astype(int).values
+    X = df.drop(columns=["cover_type"])
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+    train_df = copy.copy(x_train)
+    train_df["cover_type"] = y_train
+    test_df = copy.copy(x_test)
+    test_df["cover_type"] = y_test
+
+    scaler = MinMaxScaler()
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
+
+    if sweep:
+        x_train, x_val, y_train, y_val = train_test_split(
+            x_train,
+            y_train,
+            test_size=0.2,
+            random_state=validation_seed,
+            stratify=y_train,
+        )
+    else:
+        x_val = None
+        y_val = None
+    return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
+
+
+def prepare_shuttle(
+    sweep: bool,
+    seed: int,
+    validation_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
+    dataset = load_dataset("mstz/shuttle", "shuttle", trust_remote_code=True)["train"]
+    df = pd.DataFrame(dataset)
+    y = df["class"].astype(int).values
+    print(min(y), max(y))
+    X = df.drop(columns=["class"])
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+    train_df = copy.copy(x_train)
+    train_df["class"] = y_train
+    test_df = copy.copy(x_test)
+    test_df["class"] = y_test
+
+    scaler = MinMaxScaler()
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
+
+    if sweep:
+        x_train, x_val, y_train, y_val = train_test_split(
+            x_train,
+            y_train,
+            test_size=0.2,
+            random_state=validation_seed,
+            stratify=y_train,
+        )
+    else:
+        x_val = None
+        y_val = None
+    return x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_df
+
+
+def prepare_data(args: argparse.Namespace, current_path: Path) -> tuple[DataLoader, DataLoader, DataLoader]:
+    match args.dataset_name:
+        case "breast_cancer":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_breast_cancer(
+                args.sweep, args.seed, current_path, args.validation_seed
+            )
+        case "pima":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_pima(
+                args.sweep, args.seed, current_path, args.validation_seed
+            )
+        case "diabetes":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_diabetes(
+                args.sweep, args.seed, current_path, args.validation_seed
+            )
+        case "adult":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_adult(
+                args.sweep,
+                args.seed,
+                current_path,
+                args.validation_seed,
+            )
+        case "dutch":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_dutch(
+                args.sweep, args.seed, current_path, args.validation_seed
+            )
+        case "house16":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_house16(
+                sweep=args.sweep,
+                seed=args.seed,
+                validation_seed=args.validation_seed,
+            )
+        case "letter":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_letter(
+                sweep=args.sweep,
+                seed=args.seed,
+                validation_seed=args.validation_seed,
+            )
+        case "shuttle":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_shuttle(
+                sweep=args.sweep,
+                seed=args.seed,
+                validation_seed=args.validation_seed,
+            )
+        case "covertype":
+            x_train, x_val, x_test, y_train, y_val, y_test, _, _ = prepare_covertype(
+                sweep=args.sweep,
+                seed=args.seed,
+                validation_seed=args.validation_seed,
+            )
+        case _:
+            raise ValueError("Dataset not recognized")
 
     train_loader, val_loader, test_loader = create_torch_loader(
         args.sweep, args.batch_size, x_train, x_val, x_test, y_train, y_val, y_test
