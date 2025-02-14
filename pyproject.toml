@@ -1,10 +1,12 @@
-
-
 [project]
+name = "synth-xai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
 authors = [
-    {name = "lucacorbucci", email = "corbuccilu@gmail.com"},
+    { name = "lucacorbucci", email = "corbuccilu@gmail.com" }
 ]
-requires-python = "<3.13,<4.0,>=3.10"
+requires-python = ">=3.10, <3.13"
 dependencies = [
     "torch==2.2.2",
     "ctgan<1.0.0,>=0.10.2",
@@ -22,19 +24,20 @@ dependencies = [
     "pytest>=8.3.4",
     "datasets>=3.2.0",
 ]
-name = "personalized-explanations"
-version = "0.1.0"
-description = ""
-readme = "README.md"
 
-[dependency-groups]
-dev = [
-    "ipykernel<7.0.0,>=6.29.5",
-]
+[project.scripts]
+synth-xai = "synth_xai:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 
+[tool.uv.sources]
+my_base_project = { path = "./src/" }
 
-
+[tool.uv.workspace]
+members = ["synth_xai"]
 
 
 [tool.ruff]
