@@ -24,7 +24,7 @@
 #     uv run python /home/lcorbucci/personalized_explanations/train_bb/dutch/../../train_bb.py --shuffle_seed $i --batch_size=50 --lr=0.009380641914751766 --optimizer=adam --epochs 10  --project_name Tango_BB --dataset_name dutch
 # done
 
-for i in $(seq 0 3);
-do
-    uv run python /home/lcorbucci/personalized_explanations/train_bb/adult/../../train_bb.py --shuffle_seed $i --batch_size=59 --lr=0.03706758980843329 --optimizer=adam --epochs 10  --project_name Tango_BB --dataset_name adult
-done
+# for i in $(seq 0 3);
+# do
+#     uv run python /home/lcorbucci/personalized_explanations/train_bb/adult/../../train_bb.py --shuffle_seed $i --batch_size=59 --lr=0.03706758980843329 --optimizer=adam --epochs 10  --project_name Tango_BB --dataset_name adult
+# done

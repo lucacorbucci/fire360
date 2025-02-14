@@ -1,0 +1,1 @@
+uv run python ../../../synth_xai/explanations/logistic_regression.py --dataset_name dutch --model_name dutch_BB --top_k 1000 --synthetic_dataset_path /home/lcorbucci/synth_xai/artifacts/dutch/synthetic_data/synthetic_data_200000_epochs_5000_synthethizer_name_tvae.csv --bb_path /home/lcorbucci/synth_xai/artifacts/dutch/bb/dutch_BB.pth 
