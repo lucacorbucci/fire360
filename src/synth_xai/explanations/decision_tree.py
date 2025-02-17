@@ -4,9 +4,11 @@ import signal
 import sys
 import warnings
 from collections import Counter
+from functools import partial
 from pathlib import Path
 from types import FrameType
 
+import multiprocess
 import numpy as np
 import pandas as pd
 import torch
@@ -22,10 +24,15 @@ from explanation_utils import (
     transform_input_data,
 )
 from loguru import logger
+from multiprocess import Pool
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.preprocessing import (
+    MinMaxScaler,
+)
 from sklearn.tree import DecisionTreeClassifier, export_text
 
+import wandb
 from synth_xai.bb_architectures import MultiClassModel, SimpleModel
 
 warnings.simplefilter("ignore")
@@ -110,40 +117,58 @@ def extract_rule(
     return sample_pred, rule, threshold, feature
 
 
-def extract_alternative(
-    clf: DecisionTreeClassifier,
-    sample_pred: np.ndarray,
-    old_x: pd.DataFrame,
-    threshold: np.ndarray,
-    feature: np.ndarray,
-) -> list[str]:
-    # Find the closest path that gives a different prediction
-    different_pred = abs(1 - sample_pred[0])
-    for i in range(len(clf.tree_.value)):
-        if clf.tree_.value[i][0][different_pred] > clf.tree_.value[i][0][sample_pred[0]]:
-            different_node_id = i
-            break
+# def extract_alternative(
+#     clf: DecisionTreeClassifier,
+#     sample_pred: np.ndarray,
+#     old_x: pd.DataFrame,
+#     threshold: np.ndarray,
+#     feature: np.ndarray,
+# ) -> list[str]:
+#     # Find the closest path that gives a different prediction
+#     different_pred = abs(1 - sample_pred[0])
+#     for i in range(len(clf.tree_.value)):
+#         if clf.tree_.value[i][0][different_pred] > clf.tree_.value[i][0][sample_pred[0]]:
+#             different_node_id = i
+#             break
 
-    # Print the path for the different prediction
-    node_indicator_diff = clf.decision_path(old_x.iloc[[different_node_id]])
-    node_index_diff = node_indicator_diff.indices[node_indicator_diff.indptr[0] : node_indicator_diff.indptr[1]]
+#     # Print the path for the different prediction
+#     node_indicator_diff = clf.decision_path(old_x.iloc[[different_node_id]])
+#     node_index_diff = node_indicator_diff.indices[node_indicator_diff.indptr[0] : node_indicator_diff.indptr[1]]
 
-    feature_names = sample.columns
+#     feature_names = sample.columns
 
-    logger.info("\nClosest path with a different prediction:")
-    rule = []
-    for node_id in node_index_diff:
-        if different_node_id == node_id:
-            logger.info(f"Leaf node {node_id} reached, prediction: {different_pred}")
-        else:
-            threshold_sign = "<=" if old_x.iloc[different_node_id, feature[node_id]] <= threshold[node_id] else ">"
-            logger.info(
-                f"Node {node_id}: ({feature_names[feature[node_id]]} = {old_x.iloc[different_node_id, feature[node_id]]}) {threshold_sign} {threshold[node_id]}"
-            )
-            rule.append(
-                f"({feature_names[feature[node_id]]} = {old_x.iloc[different_node_id, feature[node_id]]}) {threshold_sign} {threshold[node_id]}"
-            )
-    return rule
+#     logger.info("\nClosest path with a different prediction:")
+#     rule = []
+#     for node_id in node_index_diff:
+#         if different_node_id == node_id:
+#             logger.info(f"Leaf node {node_id} reached, prediction: {different_pred}")
+#         else:
+#             threshold_sign = "<=" if old_x.iloc[different_node_id, feature[node_id]] <= threshold[node_id] else ">"
+#             logger.info(
+#                 f"Node {node_id}: ({feature_names[feature[node_id]]} = {old_x.iloc[different_node_id, feature[node_id]]}) {threshold_sign} {threshold[node_id]}"
+#             )
+#             rule.append(
+#                 f"({feature_names[feature[node_id]]} = {old_x.iloc[different_node_id, feature[node_id]]}) {threshold_sign} {threshold[node_id]}"
+#             )
+#     return rule
+
+
+def setup_wandb(args: argparse.Namespace, synthetic_data_file: Path) -> wandb.sdk.wandb_run.Run:
+    wandb_run = wandb.init(
+        # set the wandb project where this run will be logged
+        project="tango_eval",
+        dir="/raid/lcorbucci/wandb_tmp",
+        name=f"{args.dataset_name}",
+        config={
+            "dataset_name": args.dataset_name,
+            "Model": args.model_name,
+            "Synthetic Data File": synthetic_data_file.name,
+            "Synthetiser": synthetic_data_file.name.split("_")[-1],
+            "epochs": synthetic_data_file.name.split("_")[4],
+            "num_samples_generated": synthetic_data_file.name.split("_")[2],
+        },
+    )
+    return wandb_run
 
 
 if __name__ == "__main__":
@@ -165,57 +190,91 @@ if __name__ == "__main__":
     x, y, scaler = transform_input_data(train_data=train_data, test_data=test_data, outcome_variable=outcome_variable)
 
     evaluate_bb(x, y, bb)
-    synthetic_data = load_synthetic_data(args.synthetic_dataset_path)
-    synthetic_data_labels = label_synthetic_data(
-        synthetic_data=synthetic_data, outcome_variable=outcome_variable, bb=bb, scaler=scaler
-    )
-    synthetic_data[outcome_variable] = synthetic_data_labels
 
-    predictions_bb = []
-    predictions_dt = []
-    for index_sample in range(0, 1000):
-        sample = test_data.iloc[[index_sample]]
+    synthetic_data_path = Path(args.synthetic_dataset_path)
+    if not synthetic_data_path.exists():
+        logger.error(f"File {synthetic_data_path} does not exist!")
+        sys.exit(1)
+    # get the list of csv files in the directory
+    synthetic_data_files = list(synthetic_data_path.glob("*.csv"))
 
-        # make prediction with bb
-        x_sample = torch.tensor([x[index_sample]])
-        y_sample = torch.tensor([y[index_sample]])
-        sample_pred_bb = make_predictions(x_sample, y_sample, bb)
-
-        top_k_samples = find_top_closest_rows(
-            synthetic_data=synthetic_data,
-            sample=sample,
-            k=args.top_k,
-            y_name=outcome_variable,
+    def process_file(
+        synthetic_data_file: Path,
+        args: argparse.Namespace,
+        outcome_variable: str,
+        bb: torch.nn.Module,
+        scaler: MinMaxScaler,
+        test_data: pd.DataFrame,
+        x: np.ndarray,
+        y: np.ndarray,
+    ) -> tuple[str, float]:
+        logger.info(f"Processing synthetic file: {synthetic_data_file}")
+        synthetic_data = load_synthetic_data(synthetic_data_file)
+        logger.info(f"Loaded synthetic data: {synthetic_data_file}")
+        synthetic_data_labels = label_synthetic_data(
+            synthetic_data=synthetic_data, outcome_variable=outcome_variable, bb=bb, scaler=scaler
         )
+        logger.info(f"Labeled synthetic dataset: {synthetic_data_file}")
+        synthetic_data[outcome_variable] = synthetic_data_labels
 
-        X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
+        predictions_bb = []
+        predictions_dt = []
+        for index_sample in range(0, min(4000, len(test_data))):
+            sample = test_data.iloc[[index_sample]]
 
-        x_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+            # make prediction with bb
+            x_sample = torch.tensor([x[index_sample]])
+            y_sample = torch.tensor([y[index_sample]])
+            sample_pred_bb = make_predictions(x_sample, y_sample, bb)
 
-        best_model = grid_search(x_train=x_train, y_train=y_train)
+            top_k_samples = find_top_closest_rows(
+                synthetic_data=synthetic_data,
+                sample=sample,
+                k=args.top_k,
+                y_name=outcome_variable,
+            )
 
-        # print the decision tree
-        r = export_text(best_model, feature_names=old_x.columns)
-        # Predict on the test set
-        y_pred = best_model.predict(X_test)
-        # Calculate the accuracy
-        accuracy = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred)
-        # logger.info(f"Accuracy: {accuracy} - F1: {f1}")
+            X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
 
-        sample_pred, rule, threshold, feature = extract_rule(clf=best_model, y_name=outcome_variable, sample=sample)
-        # alternative_prediction = extract_alternative(best_model, sample_pred, old_x, threshold, feature)
+            x_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
 
-        logger.info(
-            f"Rule for the sample row: {rule}",
+            best_model = grid_search(x_train=x_train, y_train=y_train)
+
+            # Predict on the test set
+            y_pred = best_model.predict(X_test)
+            # Calculate the accuracy
+            accuracy = accuracy_score(y_test, y_pred)
+            f1 = f1_score(y_test, y_pred)
+
+            sample_pred, rule, threshold, feature = extract_rule(clf=best_model, y_name=outcome_variable, sample=sample)
+
+            logger.info(f"Rule for the sample row: {rule}")
+
+            predictions_bb.append(sample_pred_bb[0].item())
+            predictions_dt.append(sample_pred[0])
+
+        # compute the fidelity
+        fidelity = accuracy_score(predictions_bb, predictions_dt)
+        logger.info(f"Fidelity for file {synthetic_data_file.name}: {fidelity}")
+        wandb_run = setup_wandb(args, synthetic_data_file)
+        wandb_run.log(
+            {
+                "Fidelity": fidelity,
+                "Dataset": args.dataset_name,
+                "Model": args.model_name,
+                "Synthetic Data File": synthetic_data_file.name,
+                "Synthetiser": synthetic_data_file.name.split("_")[-1],
+            }
         )
+        wandb_run.finish()
 
-        # logger.info(f"Prediction BB {sample_pred_BB}, Prediction DT {sample_pred}")
+        return synthetic_data_file.name, fidelity
 
-        predictions_bb.append(sample_pred_bb[0].item())
-        predictions_dt.append(sample_pred[0])
-        # logger.info("Alternative path: ", alternative_prediction)
+    multiprocess.set_start_method("spawn")
+    # Create the argument tuples for each process_file call.
+    pool_args = [(file, args, outcome_variable, bb, scaler, test_data, x, y) for file in synthetic_data_files]
+    with Pool(10) as pool:
+        results = pool.starmap(process_file, pool_args)
 
-    # compute the fidelity
-    accuracy = accuracy_score(predictions_bb, predictions_dt)
-    logger.info(f"Fidelity: {accuracy}")
+    for file_name, fidelity in results:
+        logger.info(f"File: {file_name} - Final Fidelity: {fidelity}")

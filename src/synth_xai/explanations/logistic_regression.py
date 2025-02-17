@@ -6,6 +6,7 @@ import warnings
 from pathlib import Path
 from types import FrameType
 
+import multiprocess
 import numpy as np
 import pandas as pd
 import torch
@@ -21,9 +22,15 @@ from explanation_utils import (
     transform_input_data,
 )
 from loguru import logger
+from multiprocess import Pool
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.preprocessing import (
+    MinMaxScaler,
+)
+
+import wandb
 
 warnings.simplefilter("ignore")
 
@@ -92,6 +99,24 @@ def extract_logistic_explanation(
     return sample_pred, explanation, coeffs[0], feature_names
 
 
+def setup_wandb(args: argparse.Namespace, synthetic_data_file: Path) -> wandb.sdk.wandb_run.Run:
+    wandb_run = wandb.init(
+        # set the wandb project where this run will be logged
+        project="tango_eval",
+        dir="/raid/lcorbucci/wandb_tmp",
+        name=f"{args.dataset_name}",
+        config={
+            "dataset_name": args.dataset_name,
+            "Model": args.model_name,
+            "Synthetic Data File": synthetic_data_file.name,
+            "Synthetiser": synthetic_data_file.name.split("_")[-1],
+            "epochs": synthetic_data_file.name.split("_")[4],
+            "num_samples_generated": synthetic_data_file.name.split("_")[2],
+        },
+    )
+    return wandb_run
+
+
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
@@ -111,54 +136,96 @@ if __name__ == "__main__":
     x, y, scaler = transform_input_data(train_data=train_data, test_data=test_data, outcome_variable=outcome_variable)
 
     evaluate_bb(x, y, bb)
-    synthetic_data = load_synthetic_data(args.synthetic_dataset_path)
-    synthetic_data_labels = label_synthetic_data(
-        synthetic_data=synthetic_data, outcome_variable=outcome_variable, bb=bb, scaler=scaler
-    )
-    synthetic_data[outcome_variable] = synthetic_data_labels
 
-    predictions_bb = []
-    predictions_lr = []
-    for index_sample in range(0, 1000):
-        logger.info(f"Processing sample {index_sample}")
-        sample = test_data.iloc[[index_sample]]
-        logger.info(f"Sample: {sample}")
+    synthetic_data_path = Path(args.synthetic_dataset_path)
+    if not synthetic_data_path.exists():
+        logger.error(f"File {synthetic_data_path} does not exist!")
+        sys.exit(1)
+    # get the list of csv files in the directory
+    synthetic_data_files = list(synthetic_data_path.glob("*.csv"))
 
-        # Make prediction with the black-box model.
-        x_sample = torch.tensor([x[index_sample]])
-        y_sample = torch.tensor([y[index_sample]])
-        sample_pred_bb = make_predictions(x_sample, y_sample, bb)
-
-        top_k_samples = find_top_closest_rows(
+    def process_file(
+        synthetic_data_file: Path,
+        args: argparse.Namespace,
+        outcome_variable: str,
+        bb: torch.nn.Module,
+        scaler: MinMaxScaler,
+        test_data: pd.DataFrame,
+        x: np.ndarray,
+        y: np.ndarray,
+    ) -> tuple[str, float]:
+        logger.info(f"Processing synthetic file: {synthetic_data_file}")
+        synthetic_data = load_synthetic_data(synthetic_data_file)
+        logger.info(f"Loaded synthetic data: {synthetic_data_file}")
+        synthetic_data_labels = label_synthetic_data(
             synthetic_data=synthetic_data,
-            sample=sample,
-            k=args.top_k,
-            y_name=outcome_variable,
+            outcome_variable=outcome_variable,
+            bb=bb,
+            scaler=scaler,
         )
+        logger.info(f"Labeled synthetic dataset: {synthetic_data_file}")
 
-        X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
+        synthetic_data[outcome_variable] = synthetic_data_labels
 
-        x_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+        predictions_bb = []
+        predictions_lr = []
+        for index_sample in range(0, min(4000, len(test_data))):
+            logger.info(f"Processing sample {index_sample} in file {synthetic_data_file.name}")
+            sample = test_data.iloc[[index_sample]]
+            logger.info(f"Sample: {sample}")
 
-        # Hyperparameter tuning with logistic regression.
-        best_model = grid_search_lr(x_train=x_train, y_train=y_train)
+            # Make prediction with the black-box model.
+            x_sample = torch.tensor([x[index_sample]])
+            y_sample = torch.tensor([y[index_sample]])
+            sample_pred_bb = make_predictions(x_sample, y_sample, bb)
 
-        # Evaluate the logistic regression model on a test split.
-        y_pred = best_model.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred)
-        # Uncomment the next line if you wish to log the performance.
-        # logger.info(f"Logistic Regression - Accuracy: {accuracy} - F1: {f1}")
+            top_k_samples = find_top_closest_rows(
+                synthetic_data=synthetic_data,
+                sample=sample,
+                k=args.top_k,
+                y_name=outcome_variable,
+            )
 
-        # Extract explanation for the sample row.
-        sample_pred, explanation, coefficients, feature_names = extract_logistic_explanation(
-            model=best_model, sample=sample, y_name=outcome_variable
+            X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
+
+            x_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+            # Hyperparameter tuning with logistic regression.
+            best_model = grid_search_lr(x_train=x_train, y_train=y_train)
+
+            # Evaluate the logistic regression model on a test split.
+            y_pred = best_model.predict(X_test)
+            accuracy = accuracy_score(y_test, y_pred)
+            f1 = f1_score(y_test, y_pred)
+            # logger.info(f"Logistic Regression - Accuracy: {accuracy} - F1: {f1}")
+
+            # Extract explanation for the sample row.
+            sample_pred, explanation, coefficients, feature_names = extract_logistic_explanation(
+                model=best_model, sample=sample, y_name=outcome_variable
+            )
+            logger.info(f"Explanation for the sample row: {explanation}")
+
+            predictions_bb.append(sample_pred_bb[0].item())
+            predictions_lr.append(sample_pred[0])
+
+        # Compute the fidelity between the black-box and the logistic regression predictions.
+        fidelity = accuracy_score(predictions_bb, predictions_lr)
+        logger.info(f"Fidelity for file {synthetic_data_file.name}: {fidelity}")
+        wandb_run = setup_wandb(args, synthetic_data_file)
+        wandb_run.log(
+            {
+                "Fidelity": fidelity,
+            }
         )
-        logger.info(f"Explanation for the sample row: {explanation}")
+        wandb_run.finish()
 
-        predictions_bb.append(sample_pred_bb[0].item())
-        predictions_lr.append(sample_pred[0])
+        return synthetic_data_file.name, fidelity
 
-    # Compute the fidelity between the black-box and the logistic regression predictions.
-    fidelity = accuracy_score(predictions_bb, predictions_lr)
-    logger.info(f"Fidelity: {fidelity}")
+    multiprocess.set_start_method("spawn")
+    # Create the argument tuples for each process_file call.
+    pool_args = [(file, args, outcome_variable, bb, scaler, test_data, x, y) for file in synthetic_data_files]
+    with Pool(10) as pool:
+        results = pool.starmap(process_file, pool_args)
+
+    for file_name, fidelity in results:
+        logger.info(f"File: {file_name} - Final Fidelity: {fidelity}")
