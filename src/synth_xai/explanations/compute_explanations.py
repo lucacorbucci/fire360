@@ -208,12 +208,12 @@ if __name__ == "__main__":
             "Ranking Time Std": np.std(ranking_time),
             "Explanation Time": np.mean(explanation_time),
             "Explanation Time Std": np.std(explanation_time),
-            "Total Time (sec)": np.mean(total_time) * 1e6,
-            "Total Time Std (sec)": np.std(total_time) * 1e6,
-            "Ranking Time (sec)": np.mean(ranking_time) * 1e6,
-            "Ranking Time Std (sec)": np.std(ranking_time) * 1e6,
-            "Explanation Time (sec)": np.mean(explanation_time) * 1e6,
-            "Explanation Time Std (sec)": np.std(explanation_time) * 1e6,
+            "Total Time (sec)": np.mean(total_time) / 1e6,
+            "Total Time Std (sec)": np.std(total_time) / 1e6,
+            "Ranking Time (sec)": np.mean(ranking_time) / 1e6,
+            "Ranking Time Std (sec)": np.std(ranking_time) / 1e6,
+            "Explanation Time (sec)": np.mean(explanation_time) / 1e6,
+            "Explanation Time Std (sec)": np.std(explanation_time) / 1e6,
         }
     )
     wandb_run.finish()
