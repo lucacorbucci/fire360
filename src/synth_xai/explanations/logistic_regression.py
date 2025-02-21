@@ -1,58 +1,15 @@
-import argparse
-import random
-import signal
-import sys
+import re
 import warnings
-from pathlib import Path
-from types import FrameType
 
-import multiprocess
 import numpy as np
 import pandas as pd
-import torch
-from explanation_utils import (
-    evaluate_bb,
-    find_top_closest_rows,
-    get_test_data,
-    label_synthetic_data,
-    load_bb,
-    load_synthetic_data,
-    make_predictions,
-    prepare_neighbours,
-    transform_input_data,
-)
-from loguru import logger
-from multiprocess import Pool
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.preprocessing import (
-    MinMaxScaler,
-)
-
-import wandb
+from sklearn.model_selection import GridSearchCV, KFold
 
 warnings.simplefilter("ignore")
 
-parser = argparse.ArgumentParser(description="Training")
-parser.add_argument("--dataset_name", type=str, default=None, required=True)
-parser.add_argument("--synthetic_dataset_path", type=str, default=None, required=True)
-parser.add_argument("--bb_path", type=str, default=None, required=True)
-parser.add_argument("--model_name", type=str, default=False)
-parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--top_k", type=int, default=42)
-parser.add_argument("--debug", type=bool, default=False)
 
-
-def signal_handler(_sig: int, frame: FrameType | None) -> None:
-    """
-    Function used to handle the SIGINT signal.
-    """
-    logger.info("Gracefully stopping your experiment! Keep calm!")
-    sys.exit(0)
-
-
-def grid_search_lr(x_train: np.ndarray, y_train: np.ndarray) -> LogisticRegression:
+def grid_search_lr(x_train: np.ndarray, y_train: np.ndarray, seed: int) -> LogisticRegression:
     """
     Performs grid search hyperparameter tuning for logistic regression.
     We tune the penalty type, the inverse regularization strength C, and the class_weight.
@@ -63,10 +20,11 @@ def grid_search_lr(x_train: np.ndarray, y_train: np.ndarray) -> LogisticRegressi
         "class_weight": [None, "balanced"],
     }
     # We use the 'liblinear' solver since it supports both l1 and l2 penalties.
+    cv = KFold(n_splits=5, shuffle=True, random_state=seed)
     grid_search = GridSearchCV(
-        LogisticRegression(solver="liblinear", max_iter=1000, random_state=42),
+        LogisticRegression(solver="liblinear", max_iter=1000, random_state=seed),
         param_grid,
-        cv=5,
+        cv=cv,
         scoring="accuracy",
     )
     grid_search.fit(x_train, y_train)
@@ -99,133 +57,75 @@ def extract_logistic_explanation(
     return sample_pred, explanation, coeffs[0], feature_names
 
 
-def setup_wandb(args: argparse.Namespace, synthetic_data_file: Path) -> wandb.sdk.wandb_run.Run:
-    wandb_run = wandb.init(
-        # set the wandb project where this run will be logged
-        project="tango_eval",
-        dir="/raid/lcorbucci/wandb_tmp",
-        name=f"{args.dataset_name}",
-        config={
-            "dataset_name": args.dataset_name,
-            "Model": args.model_name,
-            "Synthetic Data File": synthetic_data_file.name,
-            "Synthetiser": synthetic_data_file.name.split("_")[-1],
-            "epochs": synthetic_data_file.name.split("_")[4],
-            "num_samples_generated": synthetic_data_file.name.split("_")[2],
-        },
+def compute_robustness_lr(explanations: list[list[str]]) -> float:
+    """
+    Computes the stability of the explanations. Given a list of
+    explanations, one for each sample, compute the stability.
+    the first explanation of the sample we are explaining.
+    The other explanations are the explanations of the samples
+    that are close to the one we want to explain.
+    The number of these explanation is variable and depends on a
+    parameter that we can set.
+    Given the first explanation and each of the other, compute the
+    amount of features that are in the same order and then divide by
+    the total amount of features.
+    In the end compute the average of these metric for all the
+    possible combinations of <sample to be explainer, close explanation>.
+
+    Args:
+        explanations: List of explanations for each sample.
+
+    Returns:
+        float: The stability of the explanations.
+
+    """
+    explanation_sample = explanations[0]
+    robustness = []
+    for explanation in explanations[1:]:
+        # 1 if the two features are in the same position
+        features_in_the_same_order = sum(
+            [1 for i in range(len(explanation_sample)) if explanation_sample[i] == explanation[i]]
+        )
+        total_features = len(explanation_sample)
+        robustness.append(features_in_the_same_order / total_features)
+
+    return float(np.mean(robustness))
+
+
+def compute_stability_lr(explanations: list[list[str]]) -> float:
+    """
+    The stability for the logistic regression (feature importance model)
+    is computed by considering the number of features that occur in the same order
+    across all explanation lists.
+
+    Args:
+        explanations: List of explanations for each sample. In this case
+        we should have a list with two lists inside
+
+    Returns:
+        float: The stability of the explanations.
+    """
+    first_explanation = explanations[0]
+    second_explanation = explanations[1]
+    features_in_the_same_order = sum(
+        [1 for i in range(len(first_explanation)) if first_explanation[i] == second_explanation[i]]
     )
-    return wandb_run
+    total_features = len(first_explanation)
+
+    return float(features_in_the_same_order / total_features)
 
 
-if __name__ == "__main__":
-    signal.signal(signal.SIGINT, signal_handler)
+def parse_explanation_lr(explanation: str) -> list[str]:
+    # Regex to capture the feature name that might be enclosed in quotes with optional spaces
+    features = re.findall(r"['\"]?\s*([^':]+?)\s*['\"]?:", explanation)
 
-    args = parser.parse_args()
+    return [] if features == [" "] else features
 
-    current_script_path = Path(__file__).resolve().parent
-    random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    torch.backends.cudnn.deterministic = True
-    rng = np.random.default_rng(args.seed)
-    bb = load_bb(args.bb_path)
 
-    train_data, test_data, outcome_variable = get_test_data(args)
-
-    x, y, scaler = transform_input_data(train_data=train_data, test_data=test_data, outcome_variable=outcome_variable)
-
-    evaluate_bb(x, y, bb)
-
-    synthetic_data_path = Path(args.synthetic_dataset_path)
-    if not synthetic_data_path.exists():
-        logger.error(f"File {synthetic_data_path} does not exist!")
-        sys.exit(1)
-    # get the list of csv files in the directory
-    synthetic_data_files = list(synthetic_data_path.glob("*.csv"))
-
-    def process_file(
-        synthetic_data_file: Path,
-        args: argparse.Namespace,
-        outcome_variable: str,
-        bb: torch.nn.Module,
-        scaler: MinMaxScaler,
-        test_data: pd.DataFrame,
-        x: np.ndarray,
-        y: np.ndarray,
-    ) -> tuple[str, float]:
-        logger.info(f"Processing synthetic file: {synthetic_data_file}")
-        synthetic_data = load_synthetic_data(synthetic_data_file)
-        logger.info(f"Loaded synthetic data: {synthetic_data_file}")
-        synthetic_data_labels = label_synthetic_data(
-            synthetic_data=synthetic_data,
-            outcome_variable=outcome_variable,
-            bb=bb,
-            scaler=scaler,
-        )
-        logger.info(f"Labeled synthetic dataset: {synthetic_data_file}")
-
-        synthetic_data[outcome_variable] = synthetic_data_labels
-
-        predictions_bb = []
-        predictions_lr = []
-        for index_sample in range(0, min(4000, len(test_data))):
-            logger.info(f"Processing sample {index_sample} in file {synthetic_data_file.name}")
-            sample = test_data.iloc[[index_sample]]
-            logger.info(f"Sample: {sample}")
-
-            # Make prediction with the black-box model.
-            x_sample = torch.tensor([x[index_sample]])
-            y_sample = torch.tensor([y[index_sample]])
-            sample_pred_bb = make_predictions(x_sample, y_sample, bb)
-
-            top_k_samples = find_top_closest_rows(
-                synthetic_data=synthetic_data,
-                sample=sample,
-                k=args.top_k,
-                y_name=outcome_variable,
-            )
-
-            X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
-
-            x_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
-
-            # Hyperparameter tuning with logistic regression.
-            best_model = grid_search_lr(x_train=x_train, y_train=y_train)
-
-            # Evaluate the logistic regression model on a test split.
-            y_pred = best_model.predict(X_test)
-            accuracy = accuracy_score(y_test, y_pred)
-            f1 = f1_score(y_test, y_pred)
-            # logger.info(f"Logistic Regression - Accuracy: {accuracy} - F1: {f1}")
-
-            # Extract explanation for the sample row.
-            sample_pred, explanation, coefficients, feature_names = extract_logistic_explanation(
-                model=best_model, sample=sample, y_name=outcome_variable
-            )
-            logger.info(f"Explanation for the sample row: {explanation}")
-
-            predictions_bb.append(sample_pred_bb[0].item())
-            predictions_lr.append(sample_pred[0])
-
-        # Compute the fidelity between the black-box and the logistic regression predictions.
-        fidelity = accuracy_score(predictions_bb, predictions_lr)
-        logger.info(f"Fidelity for file {synthetic_data_file.name}: {fidelity}")
-        wandb_run = setup_wandb(args, synthetic_data_file)
-        wandb_run.log(
-            {
-                "Fidelity": fidelity,
-            }
-        )
-        wandb_run.finish()
-
-        return synthetic_data_file.name, fidelity
-
-    multiprocess.set_start_method("spawn")
-    # Create the argument tuples for each process_file call.
-    pool_args = [(file, args, outcome_variable, bb, scaler, test_data, x, y) for file in synthetic_data_files]
-    with Pool(10) as pool:
-        results = pool.starmap(process_file, pool_args)
-
-    for file_name, fidelity in results:
-        logger.info(f"File: {file_name} - Final Fidelity: {fidelity}")
+def parse_coefficients_lr(explanation: str) -> list[float]:
+    # Regex to extract the coefficients of the explanations
+    # For instance given 'sex_binary: coefficient=-2.0002829218120355, value=0',
+    # 'edu_level: coefficient=-1.9999999998997144, value=2'
+    # I want to extract a list with [-2.0002829218120355, -1.9999999998997144]
+    coefficients = re.findall(r"coefficient=([-+]?\d*\.\d+)", explanation)
+    return [float(coef) for coef in coefficients]
