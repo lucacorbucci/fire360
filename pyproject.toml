@@ -24,6 +24,7 @@ dependencies = [
     "pytest>=8.3.4",
     "datasets>=3.2.0",
     "multiprocess>=0.70.16",
+    "aix360>=0.3.0",
 ]
 
 [project.scripts]

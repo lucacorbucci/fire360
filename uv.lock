@@ -124,6 +124,21 @@ wheels = [
 ]
 
 [[package]]
+name = "aix360"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scikit-learn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/21/d0d3f84517eed7a57a92b135e435e085d3514c46b4f8510f8870da9b3ee3/aix360-0.3.0.tar.gz", hash = "sha256:9a7bc56f4fa04616fb230c75c06137aba2c63f8edc838d8f7be12e2b011c0d81", size = 58219368 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/90/66a9b6c0430c4839f5a0306af2ca6cafc09a0201677c547322f151bb3508/aix360-0.3.0-py3-none-any.whl", hash = "sha256:2f7411ad7a36be530d35c68b26bcb80a7115a114047e79f79caa303e88150448", size = 58380148 },
+]
+
+[[package]]
 name = "alembic"
 version = "1.14.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3538,6 +3553,7 @@ name = "synth-xai"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aix360" },
     { name = "ctgan" },
     { name = "datasets" },
     { name = "dill" },
@@ -3558,6 +3574,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aix360", specifier = ">=0.3.0" },
     { name = "ctgan", specifier = ">=0.10.2,<1.0.0" },
     { name = "datasets", specifier = ">=3.2.0" },
     { name = "dill", specifier = "==0.3.8" },

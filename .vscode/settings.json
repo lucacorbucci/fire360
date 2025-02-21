@@ -1,3 +1,8 @@
 {
-    "mypy.configFile": "./mypy.ini"
+    "mypy.configFile": "./mypy.ini",
+    "python.testing.pytestArgs": [
+        "src"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }
