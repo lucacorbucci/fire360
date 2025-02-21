@@ -24,6 +24,22 @@ from torch.utils.data import (
 )
 
 
+class aix_model:
+    def __init__(self, model: torch.nn.Module) -> None:
+        self.model = model
+
+    def predict(self, x: np.ndarray) -> torch.Tensor:
+        x = torch.Tensor(x)
+        return self.model(x).argmax(dim=1)
+
+    def predict_proba(self, x: np.ndarray) -> np.ndarray:
+        # since the activation function of the last layer is LogSoftmax
+        # we need to apply the exponential to the output of the model
+        # cast x to be a Tensor
+        x = torch.Tensor(x)
+        return torch.nn.functional.softmax(self.model(x)).detach().numpy()
+
+
 def get_optimizer(optimizer: str, model: torch.nn.Module, lr: float) -> optim.Optimizer:
     if optimizer == "adam":
         return optim.Adam(model.parameters(), lr=lr)
@@ -285,7 +301,7 @@ def prepare_adult(
         "income",
     )
 
-    file_path = current_path / "data/adult/adult.data"
+    file_path = current_path / "../../../data/adult/adult.data"
     df_adult = pd.read_csv(file_path, names=adult_columns_names)
 
     # check the columns with missign values:
@@ -317,8 +333,11 @@ def prepare_adult(
 
     x_train, x_test, y_train, y_test = train_test_split(df_adult, y, test_size=0.2, random_state=seed, stratify=y)
 
-    train_df = df_adult_original.loc[x_train.index]
-    test_df = df_adult_original.loc[x_test.index]
+    train_df = copy.copy(x_train)
+    train_df["income_binary"] = y_train
+
+    test_df = copy.copy(x_test)
+    test_df["income_binary"] = y_test
 
     scaler = MinMaxScaler()
     x_train = scaler.fit_transform(x_train)
@@ -476,6 +495,7 @@ def prepare_covertype(
     y = df["cover_type"].astype(int).values
     X = df.drop(columns=["cover_type"])
     x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+
     train_df = copy.copy(x_train)
     train_df["cover_type"] = y_train
     test_df = copy.copy(x_test)
@@ -509,6 +529,7 @@ def prepare_shuttle(
     y = df["class"].astype(int).values
     X = df.drop(columns=["class"])
     x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+
     train_df = copy.copy(x_train)
     train_df["class"] = y_train
     test_df = copy.copy(x_test)
