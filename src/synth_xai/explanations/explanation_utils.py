@@ -17,6 +17,7 @@ from torch.utils.data import (
     TensorDataset,
 )
 
+import wandb
 from synth_xai.bb_architectures import MultiClassModel, SimpleModel
 from synth_xai.utils import (
     prepare_adult,
@@ -48,21 +49,23 @@ def get_test_data(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame,
     dataset_name = args.dataset_name
     match dataset_name:
         case "pima":
-            _, _, _, _, _, _, _, test_data = prepare_pima(sweep=False, seed=args.seed, current_path=current_script_path)
+            _, _, _, _, _, _, train_df, test_data = prepare_pima(
+                sweep=False, seed=args.seed, current_path=current_script_path
+            )
             outcome_variable = "Outcome"
         case "adult":
-            _, _, _, _, _, _, _, test_data = prepare_adult(
+            _, _, _, _, _, _, train_df, test_data = prepare_adult(
                 sweep=False, seed=args.seed, current_path=current_script_path
             )
 
             outcome_variable = "income_binary"
         case "breast_cancer":
-            _, _, _, _, _, _, _, test_data = prepare_breast_cancer(
+            _, _, _, _, _, _, train_df, test_data = prepare_breast_cancer(
                 sweep=False, seed=args.seed, current_path=current_script_path
             )
             outcome_variable = "Status"
         case "diabetes":
-            _, _, _, _, _, _, _, test_data = prepare_diabetes(
+            _, _, _, _, _, _, train_df, test_data = prepare_diabetes(
                 sweep=False, seed=args.seed, current_path=current_script_path
             )
             outcome_variable = "readmitted"
@@ -72,16 +75,16 @@ def get_test_data(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame,
             )
             outcome_variable = "occupation_binary"
         case "letter":
-            _, _, _, _, _, _, _, test_data = prepare_letter(sweep=False, seed=args.seed)
+            _, _, _, _, _, _, train_df, test_data = prepare_letter(sweep=False, seed=args.seed)
             outcome_variable = "letter"
         case "shuttle":
-            _, _, _, _, _, _, _, test_data = prepare_shuttle(sweep=False, seed=args.seed)
+            _, _, _, _, _, _, train_df, test_data = prepare_shuttle(sweep=False, seed=args.seed)
             outcome_variable = "class"
         case "covertype":
-            _, _, _, _, _, _, _, test_data = prepare_covertype(sweep=False, seed=args.seed)
+            _, _, _, _, _, _, train_df, test_data = prepare_covertype(sweep=False, seed=args.seed)
             outcome_variable = "cover_type"
         case "house16":
-            _, _, _, _, _, _, _, test_data = prepare_house16(sweep=False, seed=args.seed)
+            _, _, _, _, _, _, train_df, test_data = prepare_house16(sweep=False, seed=args.seed)
             outcome_variable = "class"
         case _:
             msg = "Invalid dataset name"
@@ -104,6 +107,39 @@ def create_torch_loader(batch_size: int, x_train: np.ndarray, y_train: np.ndarra
     train_dataset = TensorDataset(x_train_tensor, y_train_tensor)
 
     return DataLoader(train_dataset, batch_size=batch_size)
+
+
+def find_similar_samples(
+    test_data: pd.DataFrame,
+    sample: pd.DataFrame,
+    top_k: int,
+    outcome_variable: str,
+    current_index: int,
+) -> list[pd.DataFrame]:
+    """
+    Find the top k closest rows in the test data to the sample.
+
+    Args:
+        test_data: The test data
+        sample: The sample row
+        top_k: The number of closest rows to find
+        outcome_variable: The outcome variable name
+
+    Returns:
+        neighbours: The indexes of the top k closest rows to the sample
+
+    """
+    similarity = cosine_similarity(sample, test_data)
+    top_k_indices = np.argsort(similarity[0])[::-1]
+
+    neighbours = []
+    for idx in top_k_indices:
+        if idx != current_index:
+            if test_data.iloc[idx][outcome_variable] == sample[outcome_variable].values[0]:
+                neighbours.append(idx)
+            if len(neighbours) >= top_k:
+                break
+    return neighbours
 
 
 def find_top_closest_rows(synthetic_data: pd.DataFrame, sample: pd.DataFrame, k: int, y_name: str) -> pd.DataFrame:
@@ -158,7 +194,7 @@ def make_predictions(x: pd.DataFrame, y: pd.DataFrame, bb: torch.nn.Module) -> l
     return predictions
 
 
-def evaluate_bb(x: np.array, y: np.array, bb: torch.nn.Module) -> None:
+def evaluate_bb(x: np.array, y: np.array, bb: torch.nn.Module) -> list[int]:
     """
     Evaluate the quality of the black-box model on the data x, y
     passed as arguments. We calculate the accuracy and F1 score of the model.
@@ -170,11 +206,13 @@ def evaluate_bb(x: np.array, y: np.array, bb: torch.nn.Module) -> None:
 
     Returns:
         None
+
     """
     predictions = [prediction.item() for prediction in make_predictions(x, y, bb)]
     accuracy = accuracy_score(y, predictions)
-    f1 = f1_score(y, predictions)
+    f1 = f1_score(y, predictions, average="weighted")
     logger.info(f"Accuracy: {accuracy} - F1: {f1}")
+    return predictions
 
 
 def transform_input_data(
@@ -219,3 +257,27 @@ def prepare_neighbours(
     logger.debug(f"Targets of the synthetic dataset: {Counter(y)}")
 
     return x, y, old_x
+
+
+def is_explainer_supported(explainer_name: str) -> bool:
+    return explainer_name in ["logistic", "dt", "knn", "svm"]
+
+
+def setup_wandb(args: argparse.Namespace, synthetic_data_file: Path, num_samples: int) -> wandb.sdk.wandb_run.Run:
+    wandb_run = wandb.init(
+        # set the wandb project where this run will be logged
+        project="tango_eval",
+        dir="/raid/lcorbucci/wandb_tmp",
+        name=f"{args.explanation_type}_{args.dataset_name}",
+        config={
+            "dataset_name": args.dataset_name,
+            "Model": args.model_name,
+            "Synthetic Data File": synthetic_data_file.name,
+            "Synthetiser": synthetic_data_file.name.split("_")[-1],
+            "epochs": synthetic_data_file.name.split("_")[4],
+            "num_samples_generated": synthetic_data_file.name.split("_")[2],
+            "explanation_type": args.explanation_type,
+            "Explained Samples": num_samples,
+        },
+    )
+    return wandb_run
