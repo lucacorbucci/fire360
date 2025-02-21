@@ -1,1 +1,0 @@
-uv run python ../synthetic_data.py --dataset_name adult --samples_to_generate 10000 --synthesizer_name tvae --epochs 30 --store_path ../../artifacts/

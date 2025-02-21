@@ -1,0 +1,1 @@
+uv run python ../../../synth_xai/bb_training/train_bb.py --shuffle_seed 3 --batch_size=61 --lr=0.023620400262700368 --optimizer=adam --epochs 10 --project_name Tango_BB --dataset_name shuttle --save_model True --model_name shuttle_bb

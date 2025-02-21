@@ -1,0 +1,1 @@
+uv run python ../../../synth_xai/explanations/evaluate_explanations.py --top_k 3 --dataset_name dutch --bb_path /home/lcorbucci/synth_xai/artifacts/dutch/bb/dutch_BB.pth --artifacts_path /home/lcorbucci/synth_xai/artifacts/dutch/explanations/ --seed 112 --explanation_type logistic --explanations logistic_tvae_100000_2500_1.pkl logistic_tvae_100000_2500_2.pkl 
