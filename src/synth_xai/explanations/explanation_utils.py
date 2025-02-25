@@ -263,21 +263,28 @@ def is_explainer_supported(explainer_name: str) -> bool:
     return explainer_name in ["logistic", "dt", "knn", "svm"]
 
 
-def setup_wandb(args: argparse.Namespace, synthetic_data_file: Path, num_samples: int) -> wandb.sdk.wandb_run.Run:
+def setup_wandb(
+    args: argparse.Namespace,
+    synthetic_data_file: Path | None = None,
+    num_samples: int | None = None,
+    project_name: str = "tango_eval",
+) -> wandb.sdk.wandb_run.Run:
     wandb_run = wandb.init(
         # set the wandb project where this run will be logged
-        project="tango_eval",
+        project=project_name,
         dir="/raid/lcorbucci/wandb_tmp",
         name=f"{args.explanation_type}_{args.dataset_name}",
         config={
             "dataset_name": args.dataset_name,
-            "Model": args.model_name,
-            "Synthetic Data File": synthetic_data_file.name,
-            "Synthetiser": synthetic_data_file.name.split("_")[-1],
-            "epochs": synthetic_data_file.name.split("_")[4],
-            "num_samples_generated": synthetic_data_file.name.split("_")[2],
+            "Model": args.model_name if hasattr(args, "model_name") else args.bb_path.split("/")[-1].split(".")[0],
+            "Synthetic Data File": synthetic_data_file.name if synthetic_data_file else None,
+            "Synthetiser": synthetic_data_file.name.split("_")[-1] if synthetic_data_file else None,
+            "epochs": synthetic_data_file.name.split("_")[4] if synthetic_data_file else None,
+            "num_samples_generated": synthetic_data_file.name.split("_")[2] if synthetic_data_file else None,
             "explanation_type": args.explanation_type,
             "Explained Samples": num_samples,
+            "top_k": args.top_k if hasattr(args, "top_k") else None,
+            "explanations": args.explanations if hasattr(args, "explanations") else None,
         },
     )
     return wandb_run
