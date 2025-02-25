@@ -97,13 +97,13 @@ if __name__ == "__main__":
         explainer: Explainer, model: aix_model, bb: SimpleModel, sample: np.ndarray, y_sample: int, num_features: int
     ) -> tuple[list, int, int]:
         def predict_fn(x: np.ndarray) -> np.ndarray:
-            model.model.to("cuda")
+            model.model.to("cuda" if torch.cuda.is_available() else "cpu")
             return np.array(model.predict_proba(x))
 
         explanation, local_pred = explainer.explain_instance(sample, predict_fn, num_features=num_features)
         x_sample = torch.tensor([sample])
         y_sample = torch.tensor([y_sample], dtype=torch.float32)
-        bb.to("cuda")
+        bb.to("cuda" if torch.cuda.is_available() else "cpu")
         sample_pred_bb = make_predictions(x_sample, y_sample, bb)
         return explanation, sample_pred_bb[0].item(), local_pred
 

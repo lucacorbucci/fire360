@@ -172,7 +172,7 @@ class ExplainerModel:
         Compute the faithfulness of the explanation
         """
         faithfulnesses = []
-        model.to("cuda")
+        model.to("cuda" if torch.cuda.is_available() else "cpu")
         for index, explanation in enumerate(explanations):
             x = np.array(dataset[index])
             coefs = np.array(explanation)

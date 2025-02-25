@@ -36,7 +36,7 @@ class aix_model:
         # since the activation function of the last layer is LogSoftmax
         # we need to apply the exponential to the output of the model
         # cast x to be a Tensor
-        x = torch.Tensor(x).to("cuda")
+        x = torch.Tensor(x).to("cuda" if torch.cuda.is_available() else "cpu")
         return torch.nn.functional.softmax(self.model(x)).detach().cpu().numpy().astype(np.float32)
 
 

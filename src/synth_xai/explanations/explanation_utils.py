@@ -186,7 +186,10 @@ def make_predictions(x: pd.DataFrame, y: pd.DataFrame, bb: torch.nn.Module) -> l
     predictions = []
     with torch.no_grad():
         for data, target in train_loader:
-            data, target = data.to("cuda"), target.to("cuda")
+            data, target = (
+                data.to("cuda" if torch.cuda.is_available() else "cpu"),
+                target.to("cuda" if torch.cuda.is_available() else "cpu"),
+            )
             outputs = bb(data)
             predicted = outputs.argmax(dim=1, keepdim=True)
             predictions.extend(predicted)
@@ -240,7 +243,10 @@ def label_synthetic_data(
     predictions = []
     with torch.no_grad():
         for data, target in train_loader:
-            samples, _ = data.to("cuda"), target.to("cuda")
+            samples, _ = (
+                data.to("cuda" if torch.cuda.is_available() else "cpu"),
+                target.to("cuda" if torch.cuda.is_available() else "cpu"),
+            )
             outputs = bb(samples)
             predicted = outputs.argmax(dim=1, keepdim=True)
             predictions.extend(predicted)
