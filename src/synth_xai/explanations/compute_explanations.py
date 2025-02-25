@@ -160,12 +160,10 @@ if __name__ == "__main__":
         )
         finish_explanation_time = datetime.datetime.now()
         explanation_time = (finish_explanation_time - start_explanation_time).microseconds
-        logger.info(f"Extracted explanation: {explanation}")
-        logger.info(f"Explanation time: {explanation_time}")
+        # logger.info(f"Extracted explanation: {explanation}")
 
         end_time = datetime.datetime.now()
         total_time = (end_time - start_time).microseconds
-        logger.info(f"Total time: {total_time}")
 
         time = {"total_time": total_time, "ranking_time": ranking_time, "explanation_time": explanation_time}
 
