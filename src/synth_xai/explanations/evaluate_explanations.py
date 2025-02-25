@@ -1,44 +1,25 @@
 import argparse
 import ast
 import random
-import re
 import signal
 import sys
 import warnings
-from collections import Counter
-from functools import partial
 from pathlib import Path
 from types import FrameType
-from typing import Any
 
 import dill
-import multiprocess
 import numpy as np
-import pandas as pd
 import torch
 from explanation_utils import (
     evaluate_bb,
     find_similar_samples,
-    find_top_closest_rows,
     get_test_data,
-    is_explainer_supported,
-    label_synthetic_data,
     load_bb,
-    load_synthetic_data,
-    make_predictions,
-    prepare_neighbours,
     setup_wandb,
     transform_input_data,
 )
 from loguru import logger
-from multiprocess import Pool
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.preprocessing import (
-    MinMaxScaler,
-)
 
-from synth_xai.bb_architectures import MultiClassModel, SimpleModel
 from synth_xai.explanations.explainer_model import ExplainerModel
 
 warnings.simplefilter("ignore")
@@ -48,7 +29,7 @@ parser.add_argument("--dataset_name", type=str, default=None, required=True)
 parser.add_argument("--bb_path", type=str, default=None, required=True)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--explanation_type", type=str, default=None, required=True)
-parser.add_argument("--top_k", type=int, default=1)
+parser.add_argument("--top_k", type=int, default=3)
 parser.add_argument("--explanations", type=str, nargs="+", default=None, required=True)
 parser.add_argument("--artifacts_path", type=str, default=None, required=True)
 
@@ -139,9 +120,15 @@ if __name__ == "__main__":
     logger.info(f"Total explanations: {total_explanations}")
     explainer_model = ExplainerModel(explainer_type=args.explanation_type)
     explained_indexes = list(range(total_explanations))
+
+    wandb_run = setup_wandb(args, num_samples=total_explanations, project_name="tango_explanation_metrics")
+
+    metrics = {}
+
     # Stability computation
     logger.info("Computing stability")
     stabilities = []
+    stabilities_lipschitz = []
     for index in explained_indexes:
         # get the explanations from all the files
         explanations = []
@@ -149,12 +136,22 @@ if __name__ == "__main__":
         explanations.append(explainer_model.parse_explanation(str(explanation_data[1][index])))
 
         stabilities.append(explainer_model.compute_stability(explanations))
+        if args.explanation_type in ["dt"]:
+            stabilities_lipschitz.append(explainer_model.compute_stability_lipschitz(explanations))
 
     logger.info(f"Stabilities: {np.mean(stabilities)} +/- {np.std(stabilities)}")
     logger.info("Stability computation done!")
+    metrics["stability"] = np.mean(stabilities)
+    metrics["stability_std"] = np.std(stabilities)
+
+    if args.explanation_type in ["dt"]:
+        logger.info(f"Stabilities Lipschitz: {np.mean(stabilities_lipschitz)} +/- {np.std(stabilities_lipschitz)}")
+        metrics["stability_lipschitz"] = np.mean(stabilities_lipschitz)
+        metrics["stability_lipschitz_std"] = np.std(stabilities_lipschitz)
 
     # Robustness computation
     robustness_list = []
+    robustness_list_lipschitz = []
     test_data = test_data.iloc[explained_indexes]
     for index in explained_indexes:
         # get sample index from test_data
@@ -169,9 +166,20 @@ if __name__ == "__main__":
         for closest_row_index in closest_rows:
             explanations.append(explainer_model.parse_explanation(str(explanation_data[0][closest_row_index])))
         robustness_list.append(explainer_model.compute_robustness(explanations=explanations))
+        if args.explanation_type in ["dt"]:
+            robustness_list_lipschitz.append(explainer_model.compute_robustness_lipschitz(explanations=explanations))
 
     logger.info(f"Computing robustness: {np.mean(robustness_list)} +/- {np.std(robustness_list)}")
     logger.info("Robustness computation done!")
+    if args.explanation_type in ["dt"]:
+        logger.info(
+            f"Computing robustness Lipschitz: {np.mean(robustness_list_lipschitz)} +/- {np.std(robustness_list_lipschitz)}"
+        )
+        metrics["robustness_lipschitz"] = np.mean(robustness_list_lipschitz)
+        metrics["robustness_lipschitz_std"] = np.std(robustness_list_lipschitz)
+
+    metrics["robustness"] = np.mean(robustness_list)
+    metrics["robustness_std"] = np.std(robustness_list)
 
     # Faithfulness computation
     if args.explanation_type in ["logistic", "svm"]:
@@ -183,7 +191,11 @@ if __name__ == "__main__":
                 explainer_model.parse_coefficients(str(explanation_data[0][index])) for index in explained_indexes
             ],
             base_value=base_value,
-            outcome_variable=outcome_variable,
         )
 
         logger.info(f"Faithfulness: {mean_faithfulness} +/- {std_faithfulness}")
+        metrics["faithfulness"] = mean_faithfulness
+        metrics["faithfulness_std"] = std_faithfulness
+
+    wandb_run.log(metrics)
+    wandb_run.finish()
