@@ -235,8 +235,8 @@ if __name__ == "__main__":
         + ".pkl"
     )
     store_path = Path(args.store_path) / file_name
-    # with Path(store_path).open("wb") as f:
-    #     # store the computed_explanations dictionary as a json file
-    #     dill.dump(computed_explanations, f)
+    with Path(store_path).open("wb") as f:
+        # store the computed_explanations dictionary as a json file
+        dill.dump(computed_explanations, f)
 
     logger.info(f"Final Fidelity: {fidelity}")
