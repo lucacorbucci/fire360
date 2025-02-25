@@ -36,8 +36,8 @@ class aix_model:
         # since the activation function of the last layer is LogSoftmax
         # we need to apply the exponential to the output of the model
         # cast x to be a Tensor
-        x = torch.Tensor(x)
-        return torch.nn.functional.softmax(self.model(x)).detach().numpy()
+        x = torch.Tensor(x).to("cuda")
+        return torch.nn.functional.softmax(self.model(x)).detach().cpu().numpy().astype(np.float32)
 
 
 def get_optimizer(optimizer: str, model: torch.nn.Module, lr: float) -> optim.Optimizer:
@@ -313,8 +313,6 @@ def prepare_adult(
         error_message = "There are still missing values in the dataset"
         raise ValueError(error_message)
 
-    df_adult_original = copy.copy(df_adult)
-
     df_adult["sex_binary"] = np.where(df_adult["sex"] == " Male", 1, 0)
     df_adult["race_binary"] = np.where(df_adult["race"] == " White", 1, 0)
     df_adult["age_binary"] = np.where((df_adult["age"] > 25) & (df_adult["age"] < 60), 1, 0)
@@ -329,7 +327,8 @@ def prepare_adult(
 
     df_adult = df_adult[adult_feat_cols]
 
-    df_adult = pd.get_dummies(df_adult, columns=None, drop_first=False)
+    # Now apply one-hot encoding
+    df_adult = pd.get_dummies(df_adult, drop_first=False)
 
     x_train, x_test, y_train, y_test = train_test_split(df_adult, y, test_size=0.2, random_state=seed, stratify=y)
 
