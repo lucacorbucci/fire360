@@ -9,7 +9,9 @@ from sklearn.tree import DecisionTreeClassifier
 
 from synth_xai.explanations.decision_tree import (
     compute_robustness_dt,
+    compute_robustness_dt_lipschitz,
     compute_stability_dt,
+    compute_stability_dt_lipschitz,
     extract_rule_dt,
     grid_search_dt,
     parse_explanation_dt,
@@ -103,6 +105,16 @@ class ExplainerModel:
             case _:
                 raise ValueError("Invalid explainer type")
 
+    def compute_stability_lipschitz(self, explanations: list[list[str]]) -> float:
+        """
+        Compute the stability of the explanations
+        """
+        match self.explainer_type:
+            case "dt":
+                return compute_stability_dt_lipschitz(explanations=explanations)
+            case _:
+                raise ValueError("Invalid explainer type")
+
     def compute_robustness(self, explanations: list[list[str]]) -> float:
         """
         Compute the stability of the explanations
@@ -116,6 +128,16 @@ class ExplainerModel:
                 return compute_robustness_svm(explanations=explanations)
             case "knn":
                 raise ValueError("Invalid explainer type")
+            case _:
+                raise ValueError("Invalid explainer type")
+
+    def compute_robustness_lipschitz(self, explanations: list[list[str]]) -> float:
+        """
+        Compute the stability of the explanations
+        """
+        match self.explainer_type:
+            case "dt":
+                return compute_robustness_dt_lipschitz(explanations=explanations)
             case _:
                 raise ValueError("Invalid explainer type")
 
@@ -145,13 +167,12 @@ class ExplainerModel:
         dataset: pd.DataFrame,
         explanations: list[list[float]],
         base_value: float,
-        outcome_variable: str,
     ) -> tuple[float, float]:
         """
         Compute the faithfulness of the explanation
         """
         faithfulnesses = []
-        model.to("cpu")
+        model.to("cuda")
         for index, explanation in enumerate(explanations):
             x = np.array(dataset[index])
             coefs = np.array(explanation)
@@ -164,4 +185,4 @@ class ExplainerModel:
                 base=base_value * np.ones(shape=coefs.shape[0]),
             )
             faithfulnesses.append(faithfulness)
-        return np.mean(faithfulnesses), np.std(faithfulnesses)
+        return float(np.mean(faithfulnesses)), float(np.std(faithfulnesses))
