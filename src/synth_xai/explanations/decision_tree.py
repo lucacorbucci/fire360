@@ -92,6 +92,54 @@ def compute_stability_dt(explanations: list[list[str]]) -> float:
     return 2 * common / total if total > 0 else 0.0
 
 
+def compute_robustness_dt_lipschitz(explanations: list[list[str]]) -> float:
+    """
+    Differently from the other compute_robustness_dt function, this one computes the robustness
+    using the Lipschitz constant.
+
+    Args:
+        explanations (list[list[str]]): List of explanations for two samples
+
+    Returns:
+        float: The Lipschitz robustness between the two norm_explanations
+
+    """
+    sample_explanation = explanations[0]
+    robustness = [
+        compute_stability_dt_lipschitz(explanations=[sample_explanation, explanation])
+        for explanation in explanations[1:]
+    ]
+    return float(np.mean(robustness))
+
+
+def compute_stability_dt_lipschitz(explanations: list[list[str]]) -> float:
+    """
+    The function computes the Lipschitz constant based on the definition
+    presented in https://arxiv.org/abs/1806.07538.
+    The stability is computed as:
+    L = ‖ e_x - e_x' ‖ / ‖ x - x' ‖
+
+    Args:
+        explanations (list[list[str]]): List of explanations for two samples
+
+    Returns:
+        float: The Lipschitz loss between the two explanations
+
+    """
+    if not isinstance(explanations, list) or len(explanations) != 2:
+        msg = "Expected exactly two explanations for stability computation"
+        raise ValueError(msg)
+
+    list1 = explanations[0]
+    list2 = explanations[1]
+
+    print(list1, list2)
+    norm_explanations = np.linalg.norm(np.array(list1) - np.array(list2))
+    norm_samples = np.linalg.norm(np.array(list1) - np.array(list2))
+
+    return float(norm_explanations / norm_samples) if norm_samples > 0 else 0.0
+
+
 def parse_explanation_dt(explanation: str) -> list[str]:
     pattern = re.compile(r"\(\s*(\w+)\s*=")
     matches = []
@@ -105,39 +153,3 @@ def parse_explanation_dt(explanation: str) -> list[str]:
         matches = pattern.findall(explanation)
 
     return matches
-
-
-# def extract_alternative(
-#     clf: DecisionTreeClassifier,
-#     sample_pred: np.ndarray,
-#     old_x: pd.DataFrame,
-#     threshold: np.ndarray,
-#     feature: np.ndarray,
-# ) -> list[str]:
-#     # Find the closest path that gives a different prediction
-#     different_pred = abs(1 - sample_pred[0])
-#     for i in range(len(clf.tree_.value)):
-#         if clf.tree_.value[i][0][different_pred] > clf.tree_.value[i][0][sample_pred[0]]:
-#             different_node_id = i
-#             break
-
-#     # Print the path for the different prediction
-#     node_indicator_diff = clf.decision_path(old_x.iloc[[different_node_id]])
-#     node_index_diff = node_indicator_diff.indices[node_indicator_diff.indptr[0] : node_indicator_diff.indptr[1]]
-
-#     feature_names = sample.columns
-
-#     logger.info("\nClosest path with a different prediction:")
-#     rule = []
-#     for node_id in node_index_diff:
-#         if different_node_id == node_id:
-#             logger.info(f"Leaf node {node_id} reached, prediction: {different_pred}")
-#         else:
-#             threshold_sign = "<=" if old_x.iloc[different_node_id, feature[node_id]] <= threshold[node_id] else ">"
-#             logger.info(
-#                 f"Node {node_id}: ({feature_names[feature[node_id]]} = {old_x.iloc[different_node_id, feature[node_id]]}) {threshold_sign} {threshold[node_id]}"
-#             )
-#             rule.append(
-#                 f"({feature_names[feature[node_id]]} = {old_x.iloc[different_node_id, feature[node_id]]}) {threshold_sign} {threshold[node_id]}"
-#             )
-#     return rule
