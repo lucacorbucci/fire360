@@ -97,7 +97,7 @@ def load_synthetic_data(synthetic_data_path: str) -> pd.DataFrame:
 
 
 def load_bb(bb_path: str) -> torch.nn.Module:
-    return torch.load(bb_path)
+    return torch.load(bb_path, map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
 
 def create_torch_loader(batch_size: int, x_train: np.ndarray, y_train: np.ndarray) -> DataLoader:
