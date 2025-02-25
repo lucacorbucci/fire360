@@ -1,0 +1,1 @@
+uv run python ../../../synth_xai/explanations/evaluate_explanations.py  --dataset_name house16 --bb_path /home/lcorbucci/synth_xai/artifacts/house16/bb/house16_BB.pth --artifacts_path /home/lcorbucci/synth_xai/artifacts/house16/explanations/  --explanation_type logistic --explanations logistic_tvae_100000_2500_1.pkl logistic_tvae_100000_2500_2.pkl 

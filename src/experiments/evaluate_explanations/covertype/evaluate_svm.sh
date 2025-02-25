@@ -1,0 +1,1 @@
+uv run python ../../../synth_xai/explanations/evaluate_explanations.py  --dataset_name covertype --bb_path /home/lcorbucci/synth_xai/artifacts/covertype/bb/covertype_BB.pth --artifacts_path /home/lcorbucci/synth_xai/artifacts/covertype/explanations/  --explanation_type svm --explanations svm_tvae_100000_2500_1.pkl svm_tvae_100000_2500_2.pkl
