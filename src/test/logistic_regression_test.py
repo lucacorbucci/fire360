@@ -8,15 +8,20 @@ from synth_xai.explanations.logistic_regression import compute_stability_lr, par
 @pytest.mark.parametrize(
     "explanation, expected",
     [
-        (" 'sex_binary   : coefficient=-12.52348470819837, value=1", ["sex_binary"]),
-        ("age: coefficient=5.3, value=42", ["age"]),
+        ("'sex_binary: coefficient=-12.52348470819837, value=1'", ["sex_binary"]),
+        ("'age: coefficient=5.3, value=42'", ["age"]),
         (
-            "sex_binary: coefficient=-12.52348470819837, value=1', 'edu_level: coefficient=-7.3348013481681456, value=5', 'citizenship: coefficient=4.31405029089262, value=1",
+            "'sex_binary: coefficient=-12.52348470819837, value=1', 'edu_level: coefficient=-7.3348013481681456, value=5', 'citizenship: coefficient=4.31405029089262, value=1'",
             ["sex_binary", "edu_level", "citizenship"],
         ),
-        ("   'income : coefficient=-0.2, value=35000", ["income"]),
+        ("'income: coefficient=-0.2, value=35000'", ["income"]),
         ("coefficient=5, value=42", []),
-        ("\t' education '   : coefficient=3.14, value=16", []),
+        ("'education: coefficient=3.14, value=16'", ["education"]),
+        (
+            "'education: coefficient=3.14, value=16', 'marital-status_ Married-civ-spouse: coefficient=3.14, value=16'",
+            ["education", "marital-status_ Married-civ-spouse"],
+        ),
+        ("\t'marital-status_ Married-civ-spouse: coefficient=3.14, value=16'", ["marital-status_ Married-civ-spouse"]),
         (
             "['sex_binary: coefficient=-12.52348470819837, value=1', 'edu_level: coefficient=-7.3348013481681456, value=5', 'citizenship: coefficient=4.31405029089262, value=1', 'economic_status: coefficient=3.7491310198873933, value=111', 'age: coefficient=-3.350037337090565, value=6', 'country_birth: coefficient=2.267282994351346, value=1', 'Marital_status: coefficient=-1.4862653095013403, value=1', 'household_size: coefficient=-0.7562493114228797, value=112', 'prev_residence_place: coefficient=0.5042693628520929, value=1', 'household_position: coefficient=-0.11770076803090257, value=1131', 'cur_eco_activity: coefficient=-0.09708095043104509, value=122']",
             [
