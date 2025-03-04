@@ -1,0 +1,2 @@
+
+uv run python ../../../synth_xai/explanations/evaluate_explanations.py --dataset_name letter --bb_path /home/lcorbucci/synth_xai/artifacts/letter/bb/letter_BB.pth --explanation_type lime --explanations lime_1.pkl lime_2.pkl --artifacts_path /home/lcorbucci/synth_xai/artifacts/letter/comparison_explanation/lime/ --top_k 3 5 8 10 20
