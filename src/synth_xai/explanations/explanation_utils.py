@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import wandb
 from loguru import logger
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.metrics.pairwise import cosine_similarity
@@ -17,7 +18,6 @@ from torch.utils.data import (
     TensorDataset,
 )
 
-import wandb
 from synth_xai.bb_architectures import MultiClassModel, SimpleModel
 from synth_xai.utils import (
     prepare_adult,

@@ -38,18 +38,18 @@ from synth_xai.utils import (
 
 def prepare_data(args: argparse.Namespace, current_path: Path) -> tuple[DataLoader, DataLoader, DataLoader]:
     match args.dataset_name:
-        case "breast_cancer":
-            x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_breast_cancer(
-                args.sweep, args.seed, current_path, args.validation_seed
-            )
-        case "pima":
-            x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_pima(
-                args.sweep, args.seed, current_path, args.validation_seed
-            )
-        case "diabetes":
-            x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_diabetes(
-                args.sweep, args.seed, current_path, args.validation_seed
-            )
+        # case "breast_cancer":
+        #     x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_breast_cancer(
+        #         args.sweep, args.seed, current_path, args.validation_seed
+        #     )
+        # case "pima":
+        #     x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_pima(
+        #         args.sweep, args.seed, current_path, args.validation_seed
+        #     )
+        # case "diabetes":
+        #     x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_diabetes(
+        #         args.sweep, args.seed, current_path, args.validation_seed
+        #     )
         case "adult":
             x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_adult(
                 args.sweep,
@@ -75,30 +75,62 @@ def prepare_data(args: argparse.Namespace, current_path: Path) -> tuple[DataLoad
             x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_dutch(
                 args.sweep, args.seed, current_path, args.validation_seed
             )
+            outcome_variable = "occupation_binary"
+            feature_names = list(train_df.drop(columns=[outcome_variable]).columns)
+            categorical_feature_names = [
+                "sex",
+                "age_category",
+                "citizenship",
+                "household_position",
+                "household_size",
+                "country_of_birth",
+            ]
+            class_names = ["Low Skill", "High Skill"]
         case "house16":
             x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_house16(
                 sweep=args.sweep,
                 seed=args.seed,
                 validation_seed=args.validation_seed,
             )
+            outcome_variable = "class"
+            feature_names = list(train_df.drop(columns=[outcome_variable]).columns)
+
+            categorical_feature_names = []  # Assuming all features are numerical
+            class_names = ["No House", "House"]
         case "letter":
             x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_letter(
                 sweep=args.sweep,
                 seed=args.seed,
                 validation_seed=args.validation_seed,
             )
+            outcome_variable = "letter"
+            feature_names = list(train_df.drop(columns=[outcome_variable]).columns)
+
+            categorical_feature_names = []  # Assuming all features are numerical
+            class_names = [chr(i) for i in range(65, 91)]  # A-Z letters
+
         case "shuttle":
             x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_shuttle(
                 sweep=args.sweep,
                 seed=args.seed,
                 validation_seed=args.validation_seed,
             )
+            outcome_variable = "class"
+            feature_names = list(train_df.drop(columns=[outcome_variable]).columns)
+
+            categorical_feature_names = []  # Shuttle dataset is fully numerical
+            class_names = ["1", "2", "3", "4", "5", "6", "7"]  # Adjust if needed
+
         case "covertype":
             x_train, x_val, x_test, y_train, y_val, y_test, train_df, test_data = prepare_covertype(
                 sweep=args.sweep,
                 seed=args.seed,
                 validation_seed=args.validation_seed,
             )
+            outcome_variable = "cover_type"
+            feature_names = list(train_df.drop(columns=[outcome_variable]).columns)
+            categorical_feature_names = []
+            class_names = ["4", "1", "0", "6", "2", "5", "3"]
         case _:
             raise ValueError("Dataset not recognized")
 

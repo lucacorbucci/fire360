@@ -55,7 +55,7 @@ def extract_svm_explanation(
     return sample_pred, explanation, coeffs[0], feature_names
 
 
-def compute_robustness_svm(explanations: list[list[str]]) -> float:
+def compute_robustness_svm(explanations: list[list[str]], top_k: list) -> list:
     """
     Computes the stability of the explanations. Given a list of
     explanations, one for each sample, compute the stability.
@@ -87,7 +87,10 @@ def compute_robustness_svm(explanations: list[list[str]]) -> float:
         total_features = len(explanation_sample)
         robustness.append(features_in_the_same_order / total_features)
 
-    return float(np.mean(robustness))
+    mean_robustness = []
+    for top in top_k:
+        mean_robustness.append(np.mean(robustness[:top]))
+    return mean_robustness
 
 
 def compute_stability_svm(explanations: list[list[str]]) -> float:
@@ -116,9 +119,14 @@ def compute_stability_svm(explanations: list[list[str]]) -> float:
 
 def parse_explanation_svm(explanation: str) -> list[str]:
     # Regex to capture the feature name that might be enclosed in quotes with optional spaces
-    features = re.findall(r"['\"]?\s*([^':]+?)\s*['\"]?:", explanation)
+    matches = re.findall(r"'([^']*)'", explanation)
+    features = []
 
-    return [] if features == [" "] else features
+    for match in matches:
+        end = match.find(":")
+        feature = match[:end]
+        features.append(feature)
+    return features
 
 
 def parse_coefficients_svm(explanation: str) -> list[float]:
@@ -126,6 +134,5 @@ def parse_coefficients_svm(explanation: str) -> list[float]:
     # For instance given 'sex_binary: coefficient=-2.0002829218120355, value=0',
     # 'edu_level: coefficient=-1.9999999998997144, value=2'
     # I want to extract a list with [-2.0002829218120355, -1.9999999998997144]
-
     coefficients = re.findall(r"coefficient=([-+]?\d*\.\d+)", explanation)
     return [float(coef) for coef in coefficients]

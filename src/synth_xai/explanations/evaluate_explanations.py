@@ -1,5 +1,7 @@
 import argparse
 import ast
+import math
+import os
 import random
 import signal
 import sys
@@ -9,6 +11,7 @@ from types import FrameType
 
 import dill
 import numpy as np
+import pandas as pd
 import torch
 from explanation_utils import (
     evaluate_bb,
@@ -19,7 +22,9 @@ from explanation_utils import (
     transform_input_data,
 )
 from loguru import logger
+from multiprocess import Pool
 
+from synth_xai.bb_architectures import MultiClassModel, SimpleModel  # DO NOT REMOVE
 from synth_xai.explanations.explainer_model import ExplainerModel
 
 warnings.simplefilter("ignore")
@@ -29,7 +34,7 @@ parser.add_argument("--dataset_name", type=str, default=None, required=True)
 parser.add_argument("--bb_path", type=str, default=None, required=True)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--explanation_type", type=str, default=None, required=True)
-parser.add_argument("--top_k", type=int, default=3)
+parser.add_argument("--top_k", type=int, nargs="+", default=None, required=True)
 parser.add_argument("--explanations", type=str, nargs="+", default=None, required=True)
 parser.add_argument("--artifacts_path", type=str, default=None, required=True)
 
@@ -43,47 +48,6 @@ def signal_handler(_sig: int, frame: FrameType | None) -> None:
     # if wandb_run:
     #     wandb_run.finish()
     sys.exit(0)
-
-
-# def compute_stability(explanations: list):
-#     """
-#     Function to compute the stability of the explanations.
-
-#     For feature importance explanations, stability is measured as the number
-#     of features that occur in the same order across all explanation lists.
-#     For rule-based explanations, it is measured as the number of features that
-#     are present in every rule.
-#     """
-#     logger.info("Computing stability")
-
-#     # Check if we have a feature importance explanation:
-#     # we assume that if every explanation is a list of strings (features) with the same length,
-#     # it represents a feature ranking.
-#     if all(isinstance(exp, list) for exp in explanations) and all(isinstance(feat, str) for feat in explanations[0]):
-#         baseline = explanations[0]
-#         stable_count = 0
-#         # Compare the feature at each position in the baseline with that of all other explanations.
-#         for i, feature in enumerate(baseline):
-#             if all(exp[i] == feature for exp in explanations):
-#                 stable_count += 1
-#         logger.info(f"Feature importance stability: {stable_count}/{len(baseline)} features in same order")
-#         return stable_count
-
-#     # Otherwise, treat explanations as rule sets.
-#     # Each explanation is assumed to be a list (or iterable) of features extracted from a rule.
-#     rule_sets = []
-#     for exp in explanations:
-#         try:
-#             # Ensure exp is iterable and convert to a set.
-#             rule_sets.append(set(exp))
-#         except TypeError:
-#             logger.error("Rule-based explanation is not iterable.")
-#             return None
-
-#     common_features = set.intersection(*rule_sets)
-#     stability = len(common_features)
-#     logger.info(f"Rule-based stability: {stability} common features in all rules")
-#     return stability
 
 
 if __name__ == "__main__":
@@ -118,78 +82,191 @@ if __name__ == "__main__":
 
     total_explanations = len(explanation_data[0])
     logger.info(f"Total explanations: {total_explanations}")
-    explainer_model = ExplainerModel(explainer_type=args.explanation_type)
-    explained_indexes = list(range(total_explanations))
+    is_our_explanation = args.explanation_type in ["logistic", "svm", "dt", "knn"]
+
+    explanation_mapping = {
+        "lime": "logistic",
+    }
+
+    explainer_model = ExplainerModel(
+        explainer_type=args.explanation_type
+        if args.explanation_type not in explanation_mapping
+        else explanation_mapping[args.explanation_type]
+    )
+    explained_indexes = list(explanation_data[0].keys())
 
     wandb_run = setup_wandb(args, num_samples=total_explanations, project_name="tango_explanation_metrics")
 
     metrics = {}
 
+    def preprocess_explanations(args: argparse.Namespace, explanation_data: list) -> list:
+        pre_processed_data = [{}, {}]
+        if Path(args.artifacts_path + f"pre_processed_{args.explanation_type}.pkl").exists():
+            logger.info("Loading explanations from disk")
+            with open(args.artifacts_path + f"pre_processed_{args.explanation_type}.pkl", "rb") as f:
+                pre_processed_data = dill.load(f)
+        else:
+            logger.info("Preprocessing explanations")
+
+            def parse_explanation(index: int) -> tuple[int, list, list] | bool:
+                try:
+                    return (
+                        index,
+                        explainer_model.parse_explanation(str(explanation_data[0][index])),
+                        explainer_model.parse_explanation(str(explanation_data[1][index])),
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error processing index {index}: {e}, Explanation 0: {explanation_data[0][index]}, Explanation 1: {explanation_data[1][index]}"
+                    )
+                    return False
+
+            with Pool(10) as pool:
+                results = pool.map(parse_explanation, explained_indexes)
+
+            if False in results:
+                logger.error("Some explanations failed to process.")
+
+            for index, explanation_0, explanation_1 in results:
+                pre_processed_data[0][index] = explanation_0
+                pre_processed_data[1][index] = explanation_1
+            with open(args.artifacts_path + f"pre_processed_{args.explanation_type}.pkl", "wb") as f:
+                dill.dump(pre_processed_data, f)
+
+        logger.info("Preprocessing explanations done!")
+        return pre_processed_data
+
+    def preprocess_distances(
+        args: argparse.Namespace,
+        explanation_data: list,
+        test_data: pd.DataFrame,
+        top_k: int,
+        outcome_variable: str,
+    ) -> dict:
+        all_closest_rows = {}
+        if os.path.exists(args.artifacts_path + "closest_rows.pkl"):
+            with open(args.artifacts_path + "closest_rows.pkl", "rb") as f:
+                all_closest_rows = dill.load(f)
+        else:
+
+            def compute_closest_rows(index: int) -> tuple[int, list[int]]:
+                sample = test_data.iloc[[index]]
+                closest_rows = find_similar_samples(test_data, sample, top_k, outcome_variable, index)
+                return index, closest_rows
+
+            with Pool(10) as pool:
+                results = pool.map(compute_closest_rows, explained_indexes)
+                all_closest_rows = dict(results)
+
+            with open(args.artifacts_path + "closest_rows.pkl", "wb") as f:
+                dill.dump(all_closest_rows, f)
+        return all_closest_rows
+
+    def pre_process_coefficients(explanation_data: list) -> dict[int, list]:
+        if Path(args.artifacts_path + f"coefficients_{args.explanation_type}.pkl").exists():
+            logger.info("Loading coefficients from disk")
+            with open(args.artifacts_path + f"coefficients_{args.explanation_type}.pkl", "rb") as f:
+                coefficients = dill.load(f)
+        else:
+
+            def extract_coefficients(index: int) -> tuple[int, list]:
+                return index, explainer_model.parse_coefficients(str(explanation_data[0][index]))
+
+            with Pool(10) as pool:
+                results = pool.map(extract_coefficients, explained_indexes)
+
+            coefficients = dict(results)
+            with open(args.artifacts_path + f"coefficients_{args.explanation_type}.pkl", "wb") as f:
+                dill.dump(coefficients, f)
+
+        return coefficients
+
+    test_data = test_data.iloc[explained_indexes]
+
+    if args.explanation_type in ["logistic", "svm"]:
+        coefficients = pre_process_coefficients(explanation_data)
+    elif args.explanation_type in ["lime"]:
+        coefficients = {}
+        for index in explanation_data[0].keys():
+            coefficients[index] = [coeff for _, coeff in explanation_data[0][index][0]]
+    if is_our_explanation:
+        explanation_data = preprocess_explanations(args, explanation_data)
+        logger.info("Preprocessing explanations done!")
+    all_closest_rows = preprocess_distances(args, explanation_data, test_data, max(args.top_k) * 2, outcome_variable)
+    logger.info("Preprocessing distances done!")
+
     # Stability computation
     logger.info("Computing stability")
     stabilities = []
-    stabilities_lipschitz = []
-    for index in explained_indexes:
-        # get the explanations from all the files
+
+    def compute_stability(index: int, explanation_data: list, is_our_explanation: bool) -> float | bool:
         explanations = []
-        explanations.append(explainer_model.parse_explanation(str(explanation_data[0][index])))
-        explanations.append(explainer_model.parse_explanation(str(explanation_data[1][index])))
+        if not is_our_explanation:
+            explanations.append(explanation_data[0][index][2])
+            explanations.append(explanation_data[1][index][2])
+        else:
+            explanations.append(explanation_data[0][index])
+            explanations.append(explanation_data[1][index])
+        # try:
+        stability = explainer_model.compute_stability(explanations)
+        return stability
+        # except Exception as e:
+        #     logger.error(f"Error computing stability for index {index}: {e}", exc_info=True)
+        #     return False
 
-        stabilities.append(explainer_model.compute_stability(explanations))
-        if args.explanation_type in ["dt"]:
-            stabilities_lipschitz.append(explainer_model.compute_stability_lipschitz(explanations))
-
+    args_list = [(i, explanation_data, is_our_explanation) for i in explained_indexes]
+    with Pool(10) as pool:
+        stabilities = pool.starmap(compute_stability, args_list)
+    stabilities = [stability for stability in stabilities if stability is not False]
     logger.info(f"Stabilities: {np.mean(stabilities)} +/- {np.std(stabilities)}")
     logger.info("Stability computation done!")
     metrics["stability"] = np.mean(stabilities)
     metrics["stability_std"] = np.std(stabilities)
 
-    if args.explanation_type in ["dt"]:
-        logger.info(f"Stabilities Lipschitz: {np.mean(stabilities_lipschitz)} +/- {np.std(stabilities_lipschitz)}")
-        metrics["stability_lipschitz"] = np.mean(stabilities_lipschitz)
-        metrics["stability_lipschitz_std"] = np.std(stabilities_lipschitz)
-
     # Robustness computation
-    robustness_list = []
-    robustness_list_lipschitz = []
-    test_data = test_data.iloc[explained_indexes]
-    for index in explained_indexes:
-        # get sample index from test_data
-        sample = test_data.iloc[[index]]
+    robustness_list: np.ndarray = np.array([])
 
-        # find top-k closest rows
-        top_k = args.top_k
-        closest_rows = find_similar_samples(test_data, sample, top_k, outcome_variable, index)
+    def compute_robustness(index: int, explanation_data: list, is_our_explanation: bool) -> list | bool:
+        closest_rows = [i for i in all_closest_rows[index] if i in explained_indexes]
+        explanations = []
+        if not is_our_explanation:
+            explanations.append(explanation_data[0][index][2])
+            for closest_row_index in closest_rows:
+                explanations.append(explanation_data[1][closest_row_index][2])
+        else:
+            explanations = [explanation_data[0][index]]
+            for closest_row_index in closest_rows:
+                explanations.append(explanation_data[0][closest_row_index])
+        try:
+            robustness = explainer_model.compute_robustness(explanations=explanations, top_k=args.top_k)
+            return robustness
+        except Exception as e:
+            logger.error(f"Error computing robustness for index {index}: {e}", exc_info=True)
+            return False
 
-        explanations = [explainer_model.parse_explanation(str(explanation_data[0][index]))]
+    args_list = [(i, explanation_data, is_our_explanation) for i in explained_indexes]
+    with Pool(10) as pool:
+        robustness_list = pool.starmap(compute_robustness, args_list)
 
-        for closest_row_index in closest_rows:
-            explanations.append(explainer_model.parse_explanation(str(explanation_data[0][closest_row_index])))
-        robustness_list.append(explainer_model.compute_robustness(explanations=explanations))
-        if args.explanation_type in ["dt"]:
-            robustness_list_lipschitz.append(explainer_model.compute_robustness_lipschitz(explanations=explanations))
+    robustness_list = [robustness for robustness in robustness_list if robustness is not False]
 
-    logger.info(f"Computing robustness: {np.mean(robustness_list)} +/- {np.std(robustness_list)}")
+    robustness_list = np.array(robustness_list)
+    for index, top in enumerate(args.top_k):
+        # get all the samples in position index in robustness_list
+        logger.info(f"Computing robustness for top {top} on real test set")
+        valid_robustness = robustness_list[:, index][~np.isnan(robustness_list[:, index])]
+        logger.info(f"Robustness: {np.mean(valid_robustness)} +/- {np.std(valid_robustness)}")
+        metrics[f"robustness_top_{top}"] = np.mean(valid_robustness)
+        metrics[f"robustness_std_top_{top}"] = np.std(valid_robustness)
     logger.info("Robustness computation done!")
-    if args.explanation_type in ["dt"]:
-        logger.info(
-            f"Computing robustness Lipschitz: {np.mean(robustness_list_lipschitz)} +/- {np.std(robustness_list_lipschitz)}"
-        )
-        metrics["robustness_lipschitz"] = np.mean(robustness_list_lipschitz)
-        metrics["robustness_lipschitz_std"] = np.std(robustness_list_lipschitz)
-
-    metrics["robustness"] = np.mean(robustness_list)
-    metrics["robustness_std"] = np.std(robustness_list)
 
     # Faithfulness computation
-    if args.explanation_type in ["logistic", "svm"]:
+    if args.explanation_type in ["logistic", "svm", "lime"]:
         base_value = np.mean(x)
         mean_faithfulness, std_faithfulness = explainer_model.compute_faithfulness(
             model=bb,
             dataset=x,
-            explanations=[
-                explainer_model.parse_coefficients(str(explanation_data[0][index])) for index in explained_indexes
-            ],
+            explanations=[coefficients[index] for index in explained_indexes],
             base_value=base_value,
         )
 

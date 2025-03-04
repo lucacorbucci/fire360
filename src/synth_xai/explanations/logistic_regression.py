@@ -57,7 +57,7 @@ def extract_logistic_explanation(
     return sample_pred, explanation, coeffs[0], feature_names
 
 
-def compute_robustness_lr(explanations: list[list[str]]) -> float:
+def compute_robustness_lr(explanations: list[list[str]], top_k: list) -> list:
     """
     Computes the stability of the explanations. Given a list of
     explanations, one for each sample, compute the stability.
@@ -89,7 +89,10 @@ def compute_robustness_lr(explanations: list[list[str]]) -> float:
         total_features = len(explanation_sample)
         robustness.append(features_in_the_same_order / total_features)
 
-    return float(np.mean(robustness))
+    mean_robustness = []
+    for top in top_k:
+        mean_robustness.append(np.mean(robustness[:top]))
+    return mean_robustness
 
 
 def compute_stability_lr(explanations: list[list[str]]) -> float:
@@ -107,6 +110,11 @@ def compute_stability_lr(explanations: list[list[str]]) -> float:
     """
     first_explanation = explanations[0]
     second_explanation = explanations[1]
+    for i in range(len(first_explanation)):
+        if not (len(first_explanation) == len(second_explanation)):
+            print("Not the same length")
+            print(first_explanation, second_explanation)
+
     features_in_the_same_order = sum(
         [1 for i in range(len(first_explanation)) if first_explanation[i] == second_explanation[i]]
     )
@@ -117,9 +125,14 @@ def compute_stability_lr(explanations: list[list[str]]) -> float:
 
 def parse_explanation_lr(explanation: str) -> list[str]:
     # Regex to capture the feature name that might be enclosed in quotes with optional spaces
-    features = re.findall(r"['\"]?\s*([^':]+?)\s*['\"]?:", explanation)
+    matches = re.findall(r"'([^']*)'", explanation)
+    features = []
 
-    return [] if features == [" "] else features
+    for match in matches:
+        end = match.find(":")
+        feature = match[:end]
+        features.append(feature)
+    return features
 
 
 def parse_coefficients_lr(explanation: str) -> list[float]:

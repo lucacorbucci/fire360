@@ -6,6 +6,7 @@ import pandas as pd
 
 warnings.simplefilter("ignore")
 
+import math
 from collections import Counter
 
 from sklearn.model_selection import GridSearchCV
@@ -71,85 +72,43 @@ def extract_rule_dt(
     return sample_pred, rule, threshold, feature
 
 
-def compute_robustness_dt(explanations: list[list[str]]) -> float:
+def compute_robustness_dt(explanations: list[list[str]], top_k: list) -> list:
     sample_explanation = explanations[0]
     robustness = []
-    for explanation in explanations[1:]:
-        robustness.append(compute_stability_dt(explanations=[sample_explanation, explanation]))
-    return float(np.mean(robustness))
+    for index, explanation in enumerate(explanations[1:]):
+        stability = compute_stability_dt(explanations=[sample_explanation, explanation])
+        if not math.isnan(stability):
+            robustness.append(stability)
+    mean_robustness = []
+    for top in top_k:
+        mean_robustness.append(np.mean(robustness[:top]))
+    return mean_robustness
 
 
-def compute_stability_dt(explanations: list[list[str]]) -> float:
+def compute_stability_dt(
+    explanations: list[list[str]],
+) -> float:
     if not isinstance(explanations, list) or len(explanations) != 2:
         raise ValueError("Expected exactly two explanations for stability computation")
 
     list1 = explanations[0]
     list2 = explanations[1]
-
     counter1, counter2 = Counter(list1), Counter(list2)
     common = sum((counter1 & counter2).values())
     total = len(list1) + len(list2)
     return 2 * common / total if total > 0 else 0.0
 
 
-def compute_robustness_dt_lipschitz(explanations: list[list[str]]) -> float:
-    """
-    Differently from the other compute_robustness_dt function, this one computes the robustness
-    using the Lipschitz constant.
-
-    Args:
-        explanations (list[list[str]]): List of explanations for two samples
-
-    Returns:
-        float: The Lipschitz robustness between the two norm_explanations
-
-    """
-    sample_explanation = explanations[0]
-    robustness = [
-        compute_stability_dt_lipschitz(explanations=[sample_explanation, explanation])
-        for explanation in explanations[1:]
-    ]
-    return float(np.mean(robustness))
-
-
-def compute_stability_dt_lipschitz(explanations: list[list[str]]) -> float:
-    """
-    The function computes the Lipschitz constant based on the definition
-    presented in https://arxiv.org/abs/1806.07538.
-    The stability is computed as:
-    L = ‖ e_x - e_x' ‖ / ‖ x - x' ‖
-
-    Args:
-        explanations (list[list[str]]): List of explanations for two samples
-
-    Returns:
-        float: The Lipschitz loss between the two explanations
-
-    """
-    if not isinstance(explanations, list) or len(explanations) != 2:
-        msg = "Expected exactly two explanations for stability computation"
-        raise ValueError(msg)
-
-    list1 = explanations[0]
-    list2 = explanations[1]
-
-    print(list1, list2)
-    norm_explanations = np.linalg.norm(np.array(list1) - np.array(list2))
-    norm_samples = np.linalg.norm(np.array(list1) - np.array(list2))
-
-    return float(norm_explanations / norm_samples) if norm_samples > 0 else 0.0
-
-
 def parse_explanation_dt(explanation: str) -> list[str]:
-    pattern = re.compile(r"\(\s*(\w+)\s*=")
-    matches = []
+    feature_names = []
+    while explanation.find("'(") >= 0 and explanation.find("=") >= 0:
+        start = explanation.find("(") + 1  # Find position after '('
+        if explanation[start] == "[":
+            explanation = explanation[start + 1 :]
+        else:
+            end = explanation.find("=")  # Find position of '='
+            if start > 0 and end > start:  # Ensure valid positions
+                feature_names.append(explanation[start:end].strip())  # Extract and strip spaces
+            explanation = explanation[end + 1 :]
 
-    # If explanation is a tuple and its first element is a list of strings
-    if isinstance(explanation, tuple) and isinstance(explanation[0], list):
-        for text in explanation[0]:
-            matches.extend(pattern.findall(text))
-    # Otherwise, if explanation is a string
-    elif isinstance(explanation, str):
-        matches = pattern.findall(explanation)
-
-    return matches
+    return feature_names

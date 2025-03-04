@@ -9,9 +9,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 from synth_xai.explanations.decision_tree import (
     compute_robustness_dt,
-    compute_robustness_dt_lipschitz,
     compute_stability_dt,
-    compute_stability_dt_lipschitz,
     extract_rule_dt,
     grid_search_dt,
     parse_explanation_dt,
@@ -105,39 +103,23 @@ class ExplainerModel:
             case _:
                 raise ValueError("Invalid explainer type")
 
-    def compute_stability_lipschitz(self, explanations: list[list[str]]) -> float:
-        """
-        Compute the stability of the explanations
-        """
-        match self.explainer_type:
-            case "dt":
-                return compute_stability_dt_lipschitz(explanations=explanations)
-            case _:
-                raise ValueError("Invalid explainer type")
-
-    def compute_robustness(self, explanations: list[list[str]]) -> float:
+    def compute_robustness(
+        self,
+        explanations: list[list[str]],
+        top_k: list,
+    ) -> list:
         """
         Compute the stability of the explanations
         """
         match self.explainer_type:
             case "logistic":
-                return compute_robustness_lr(explanations=explanations)
+                return compute_robustness_lr(explanations=explanations, top_k=top_k)
             case "dt":
-                return compute_robustness_dt(explanations=explanations)
+                return compute_robustness_dt(explanations=explanations, top_k=top_k)
             case "svm":
-                return compute_robustness_svm(explanations=explanations)
+                return compute_robustness_svm(explanations=explanations, top_k=top_k)
             case "knn":
                 raise ValueError("Invalid explainer type")
-            case _:
-                raise ValueError("Invalid explainer type")
-
-    def compute_robustness_lipschitz(self, explanations: list[list[str]]) -> float:
-        """
-        Compute the stability of the explanations
-        """
-        match self.explainer_type:
-            case "dt":
-                return compute_robustness_dt_lipschitz(explanations=explanations)
             case _:
                 raise ValueError("Invalid explainer type")
 
@@ -184,5 +166,9 @@ class ExplainerModel:
                 coefs=coefs,
                 base=base_value * np.ones(shape=coefs.shape[0]),
             )
+            # check if faithfulness is nan
+            if np.isnan(faithfulness):
+                continue
             faithfulnesses.append(faithfulness)
+
         return float(np.mean(faithfulnesses)), float(np.std(faithfulnesses))

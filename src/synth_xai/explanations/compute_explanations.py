@@ -53,6 +53,7 @@ parser.add_argument("--debug", type=bool, default=False)
 parser.add_argument("--explanation_type", type=str, default=None, required=True)
 parser.add_argument("--store_path", type=str, default=None, required=True)
 parser.add_argument("--num_processes", type=int, default=None, required=True)
+parser.add_argument("--explained_samples", type=int, default=None)
 
 
 def signal_handler(_sig: int, frame: FrameType | None) -> None:
@@ -87,6 +88,8 @@ if __name__ == "__main__":
     rng = np.random.default_rng(args.seed)
 
     train_data, test_data, outcome_variable = get_test_data(args)
+    x, y, scaler = transform_input_data(train_data=train_data, test_data=test_data, outcome_variable=outcome_variable)
+    evaluate_bb(x, y, bb)
 
     random.seed(args.validation_seed)
     torch.manual_seed(args.validation_seed)
@@ -94,10 +97,6 @@ if __name__ == "__main__":
     torch.cuda.manual_seed_all(args.validation_seed)
     torch.backends.cudnn.deterministic = True
     rng = np.random.default_rng(args.validation_seed)
-
-    x, y, scaler = transform_input_data(train_data=train_data, test_data=test_data, outcome_variable=outcome_variable)
-
-    evaluate_bb(x, y, bb)
 
     synthetic_data_path = Path(args.synthetic_dataset_path)
     if not synthetic_data_path.exists():
@@ -125,6 +124,7 @@ if __name__ == "__main__":
         synthetic_data: pd.DataFrame,
         outcome_variable: str,
     ) -> tuple[int, int, float, float, list[str], int, dict[str, int]]:
+        logger.info(f"Processing sample: {index}")
         # Process one sample from the test data.
         start_time = datetime.datetime.now()
         sample = test_data.iloc[[index]]
@@ -146,33 +146,48 @@ if __name__ == "__main__":
 
         X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+        try:
+            explainer_model = ExplainerModel(explainer_type=args.explanation_type)
+            explainer_model.grid_search(x_train=x_train, y_train=y_train, seed=args.validation_seed)
 
-        explainer_model = ExplainerModel(explainer_type=args.explanation_type)
-        explainer_model.grid_search(x_train=x_train, y_train=y_train, seed=args.validation_seed)
+            y_pred = explainer_model.predict(x_test)
+            accuracy_val = accuracy_score(y_test, y_pred)
+            f1_val = f1_score(y_test, y_pred, average="weighted")
 
-        y_pred = explainer_model.predict(x_test)
-        accuracy_val = accuracy_score(y_test, y_pred)
-        f1_val = f1_score(y_test, y_pred, average="weighted")
+            start_explanation_time = datetime.datetime.now()
+            sample_pred, explanation, threshold, feature = explainer_model.extract_explanation(
+                clf=explainer_model.best_model, y_name=outcome_variable, sample=sample
+            )
+            finish_explanation_time = datetime.datetime.now()
+            explanation_time = (finish_explanation_time - start_explanation_time).microseconds
+            # logger.info(f"Extracted explanation: {explanation}")
 
-        start_explanation_time = datetime.datetime.now()
-        sample_pred, explanation, threshold, feature = explainer_model.extract_explanation(
-            clf=explainer_model.best_model, y_name=outcome_variable, sample=sample
-        )
-        finish_explanation_time = datetime.datetime.now()
-        explanation_time = (finish_explanation_time - start_explanation_time).microseconds
-        # logger.info(f"Extracted explanation: {explanation}")
+            end_time = datetime.datetime.now()
+            total_time = (end_time - start_time).microseconds
 
-        end_time = datetime.datetime.now()
-        total_time = (end_time - start_time).microseconds
+            time = {"total_time": total_time, "ranking_time": ranking_time, "explanation_time": explanation_time}
 
-        time = {"total_time": total_time, "ranking_time": ranking_time, "explanation_time": explanation_time}
-
-        return sample_pred_bb[0].item(), sample_pred[0], accuracy_val, f1_val, explanation, index, time
+            return sample_pred_bb[0].item(), sample_pred[0], accuracy_val, f1_val, explanation, index, time
+        except Exception as e:
+            logger.error(f"Error processing sample: {index}")
+            logger.error(e)
+            return (
+                sample_pred_bb[0].item(),
+                -1,
+                -1,
+                -1,
+                [],
+                index,
+                {"total_time": -1, "ranking_time": -1, "explanation_time": -1},
+            )
 
     # Run the processing in parallel.
 
-    num_samples = min(20000, len(test_data))
-    args_list = [(i, test_data, x, y, bb, args, synthetic_data, outcome_variable) for i in range(num_samples)]
+    num_samples = min(10000, len(test_data))
+    args_list = [
+        (i, test_data, x, y, bb, args, synthetic_data, outcome_variable)
+        for i in range(num_samples if args.explained_samples is None else args.explained_samples)
+    ]
     with Pool(args.num_processes) as pool:
         results = pool.starmap(process_sample, args_list)
 
@@ -180,6 +195,21 @@ if __name__ == "__main__":
         list, zip(*results, strict=False)
     )
 
+    failed_explanations = []
+    for index, f1 in enumerate(f1_score):
+        if f1 == -1:
+            failed_explanations.append(index)
+    if failed_explanations:
+        logger.error(f"Failed to explain samples: {failed_explanations}")
+        failed_explanations.reverse()
+        for index in failed_explanations:
+            predictions_bb.pop(index)
+            predictions_dt.pop(index)
+            accuracy.pop(index)
+            f1_score.pop(index)
+            explanations.pop(index)
+            indexes.pop(index)
+            times.pop(index)
     # compute the fidelity
     fidelity = accuracy_score(predictions_bb, predictions_dt)
     logger.info(f"Fidelity for file {synthetic_data_path.name}: {fidelity}")
@@ -212,13 +242,16 @@ if __name__ == "__main__":
             "Ranking Time Std (sec)": np.std(ranking_time) / 1e6,
             "Explanation Time (sec)": np.mean(explanation_time) / 1e6,
             "Explanation Time Std (sec)": np.std(explanation_time) / 1e6,
+            "Failed Explanations": len(failed_explanations),
+            "Failed Explanations Indexes": failed_explanations,
         }
     )
     wandb_run.finish()
 
     computed_explanations = {}
-    for index in indexes:
-        computed_explanations[index] = (explanations[index], predictions_bb[index])
+    for index, current_index in enumerate(indexes):
+        computed_explanations[current_index] = (explanations[index], predictions_bb[index])
+
     # serialize the explanations
     file_name = (
         args.explanation_type
