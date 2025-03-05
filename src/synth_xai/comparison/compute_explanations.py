@@ -153,7 +153,7 @@ if __name__ == "__main__":
         for sample_idx in range(num_samples)
     ]
 
-    with Pool(1) as pool:
+    with Pool(20) as pool:
         results = pool.starmap(explain_sample, args_list)
 
     explanations, predictions_bb, local_predictions, features_in_the_rule, times = map(
