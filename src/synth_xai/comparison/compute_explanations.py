@@ -111,7 +111,7 @@ if __name__ == "__main__":
         model=model,
     )
     multiprocess.set_start_method("spawn")
-    num_samples = min(10000, len(test_data))
+    num_samples = min(20000, len(test_data))
 
     def explain_sample(
         explainer: Explainer,

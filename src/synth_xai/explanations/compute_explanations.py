@@ -183,7 +183,7 @@ if __name__ == "__main__":
 
     # Run the processing in parallel.
 
-    num_samples = min(10000, len(test_data))
+    num_samples = min(20000, len(test_data))
     args_list = [
         (i, test_data, x, y, bb, args, synthetic_data, outcome_variable)
         for i in range(num_samples if args.explained_samples is None else args.explained_samples)
