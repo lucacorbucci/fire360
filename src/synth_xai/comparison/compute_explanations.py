@@ -46,6 +46,7 @@ parser.add_argument("--explanation_type", type=str, default=None, required=True)
 parser.add_argument("--sweep", type=bool, default=False)
 parser.add_argument("--validation_seed", type=int, default=None)
 parser.add_argument("--num_processes", type=int, default=20, required=True)
+parser.add_argument("--k_means_k", type=int, default=100)
 parser.add_argument("--store_path", type=str, default=None, required=True)
 
 
@@ -109,6 +110,7 @@ if __name__ == "__main__":
         categorical_feature_names=categorical_feature_names,
         class_names=class_names,
         model=model,
+        k_means_k=args.k_means_k,
     )
     multiprocess.set_start_method("spawn")
     num_samples = min(20000, len(test_data))

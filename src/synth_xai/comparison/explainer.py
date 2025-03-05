@@ -24,7 +24,7 @@ class Explainer:
         categorical_feature_names: list[str],
         class_names: list[str],
         model: torch.nn.Module = None,
-        k_means_k: int = 20,
+        k_means_k: int = 100,
     ) -> None:
         self.explanation_type = args.explanation_type
         self.feature_names = feature_names
@@ -70,21 +70,8 @@ class Explainer:
             case "shap":
                 # Explain instance using SHAP
                 shap_values = self.explainer(instance)
-                # try:
-                # print(shap_values.values)
-                # print(len(shap_values.values))
-                # print(instance)
-                # print(shap_values.values[0])
-                # print()
 
-                # print(dkhjdb)
                 feature_importance = shap_values.values[:, prediction_bb]
-                # print(shap_values.values)
-
-                # except IndexError as e:
-                #     print(f"Error: {e}, {prediction_bb}")
-                #     # print(shap_values.values)
-                #     # print(prediction_bb)
 
                 return (
                     list(zip(self.feature_names, feature_importance)),
