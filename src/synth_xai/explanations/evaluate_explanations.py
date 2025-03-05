@@ -86,6 +86,7 @@ if __name__ == "__main__":
 
     explanation_mapping = {
         "lime": "logistic",
+        "shap": "logistic",
     }
 
     explainer_model = ExplainerModel(
@@ -185,7 +186,7 @@ if __name__ == "__main__":
 
     if args.explanation_type in ["logistic", "svm"]:
         coefficients = pre_process_coefficients(explanation_data)
-    elif args.explanation_type in ["lime"]:
+    elif args.explanation_type in ["lime", "shap"]:
         coefficients = {}
         for index in explanation_data[0].keys():
             coefficients[index] = [coeff for _, coeff in explanation_data[0][index][0]]
@@ -261,7 +262,7 @@ if __name__ == "__main__":
     logger.info("Robustness computation done!")
 
     # Faithfulness computation
-    if args.explanation_type in ["logistic", "svm", "lime"]:
+    if args.explanation_type in ["logistic", "svm", "lime", "shap"]:
         base_value = np.mean(x)
         mean_faithfulness, std_faithfulness = explainer_model.compute_faithfulness(
             model=bb,
