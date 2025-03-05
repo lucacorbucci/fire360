@@ -60,6 +60,7 @@ class Explainer:
                 explanation = self.explainer.explain_instance(
                     instance,
                     predict_fn,
+                    num_features=len(self.feature_names),
                 )
                 feature_names = [feature for feature, weight in explanation.as_list()]
                 clean_features = [re.sub(r"[<>]=?|\d+(\.\d+)?", "", feature).strip() for feature in feature_names]
