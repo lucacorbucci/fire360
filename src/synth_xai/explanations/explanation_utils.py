@@ -177,7 +177,7 @@ def find_top_closest_rows(synthetic_data: pd.DataFrame, sample: pd.DataFrame, k:
         if class_counts[current_class] / k <= maximum_size_class:
             top_k_samples.append(synthetic_data.iloc[idx])
             class_counts[current_class] += 1
-    logger.debug(class_counts)
+    # logger.debug(class_counts)
     return pd.DataFrame(top_k_samples)
 
 
@@ -260,7 +260,7 @@ def prepare_neighbours(
     y = top_k_samples[y_name]
     x = top_k_samples.drop(y_name, axis=1)
     old_x = copy.deepcopy(x)
-    logger.debug(f"Targets of the synthetic dataset: {Counter(y)}")
+    # logger.debug(f"Targets of the synthetic dataset: {Counter(y)}")
 
     return x, y, old_x
 
