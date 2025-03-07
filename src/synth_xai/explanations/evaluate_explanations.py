@@ -87,6 +87,7 @@ if __name__ == "__main__":
     explanation_mapping = {
         "lime": "logistic",
         "shap": "logistic",
+        "lore": "dt",
     }
 
     explainer_model = ExplainerModel(
