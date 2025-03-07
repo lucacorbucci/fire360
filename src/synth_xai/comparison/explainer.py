@@ -1,4 +1,5 @@
 import argparse
+import copy
 import re
 import typing
 from pathlib import Path
@@ -9,10 +10,33 @@ import shap
 import torch
 from lime.lime_tabular import LimeTabularExplainer
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import (
+    MinMaxScaler,
+)
 
+from lore_sa.bbox import sklearn_classifier_bbox
+from lore_sa.dataset import TabularDataset
+from lore_sa.lore import TabularRandomGeneratorLore
 from synth_xai.bb_architectures import MultiClassModel, SimpleModel
 from synth_xai.explanations.explanation_utils import load_bb
 from synth_xai.utils import prepare_adult
+
+
+class MyModel:
+    def __init__(self, model: torch.nn.Module, scaler) -> None:
+        self.model = model
+        self.scaler = scaler
+
+    def predict(self, x: np.ndarray) -> torch.Tensor:
+        x = self.scaler.transform(x)
+
+        predictions = []
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model.to(device)
+        for sample in x:
+            sample_tensor = torch.Tensor(sample).to(device)
+            predictions.append(self.model(sample_tensor).argmax().item())
+        return np.array(predictions)
 
 
 class Explainer:
@@ -25,6 +49,8 @@ class Explainer:
         class_names: list[str],
         model: torch.nn.Module = None,
         k_means_k: int = 100,
+        train_df: pd.DataFrame = None,
+        target_name: str = None,
     ) -> None:
         self.explanation_type = args.explanation_type
         self.feature_names = feature_names
@@ -47,6 +73,21 @@ class Explainer:
                     model.predict_proba,
                     data=shap.kmeans(x_train, k_means_k),
                 )
+            case "lore":
+                train_df_tmp = copy.copy(train_df)
+                train_df_tmp = train_df_tmp.drop(columns=["income_binary"])
+
+                scaler = MinMaxScaler()
+                _ = scaler.fit_transform(train_df_tmp)
+
+                model = MyModel(model=model.model, scaler=scaler)
+                bbox = sklearn_classifier_bbox.sklearnBBox(model)
+
+                train_df["income_binary"] = [int(x) for x in train_df["income_binary"]]
+                train_df["income_binary"] = train_df["income_binary"].astype("category")
+                self.dataset = TabularDataset.from_dict(train_df, class_name="income_binary")
+                self.dataset.df.dropna(inplace=True)
+                self.explainer = TabularRandomGeneratorLore(bbox, self.dataset)
 
     def explain_instance(
         self,
@@ -78,6 +119,10 @@ class Explainer:
                     prediction_bb,
                     self.feature_names,
                 )
+            case "lore":
+                explanation = self.explainer.explain(instance)
+                fidelity = explanation["fidelity"]
+                return (explanation, fidelity, [premise["attr"] for premise in explanation["rule"]["premises"]])
             case _:
                 raise ValueError("Invalid explainer name")
                 return []

@@ -89,6 +89,7 @@ if __name__ == "__main__":
         feature_names,
         categorical_feature_names,
         class_names,
+        outcome_variable_name,
     ) = prepare_data(args=args, current_path=current_script_path)
 
     print(f"Using validation seed {args.validation_seed}")
@@ -111,9 +112,11 @@ if __name__ == "__main__":
         class_names=class_names,
         model=model,
         k_means_k=args.k_means_k,
+        train_df=train_df,
+        target_name=outcome_variable_name,
     )
     multiprocess.set_start_method("spawn")
-    num_samples = min(20000, len(test_data))
+    num_samples = min(1000, len(test_data))
 
     def explain_sample(
         explainer: Explainer,
@@ -123,6 +126,7 @@ if __name__ == "__main__":
         y_sample: int,
         num_features: int,
         index: int,
+        args: argparse.Namespace,
     ) -> tuple[list, int, int, list]:
         if index % 100 == 0:
             logger.info(f"Explaining sample {index}")
@@ -139,43 +143,81 @@ if __name__ == "__main__":
 
         start_explanation_time = datetime.datetime.now()
 
-        explanation, local_pred, feat_in_the_rule = explainer.explain_instance(
-            sample, predict_fn, sample_pred_bb[0].item()
-        )
+        if args.explanation_type == "lore":
+            explanation, fidelity_sample, feat_in_the_rule = explainer.explain_instance(
+                sample, predict_fn, sample_pred_bb[0].item()
+            )
+        else:
+            explanation, local_pred, feat_in_the_rule = explainer.explain_instance(
+                sample, predict_fn, sample_pred_bb[0].item()
+            )
 
         end_time = datetime.datetime.now()
         total_time = (end_time - start_explanation_time).microseconds
+        if args.explanation_type == "lore":
+            return explanation, sample_pred_bb[0].item(), fidelity_sample, feat_in_the_rule, total_time, index
+        else:
+            return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index
 
-        return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time
+    if args.explanation_type == "lore":
+        args_list = [
+            (
+                explainer,
+                model,
+                bb,
+                explainer.dataset.df.iloc[sample_idx][:-1],
+                explainer.dataset.df.iloc[sample_idx][-1],
+                len(feature_names),
+                sample_idx,
+                args,
+            )
+            for sample_idx in range(num_samples)
+        ]
+    else:
+        args_list = [
+            (
+                explainer,
+                model,
+                bb,
+                x_test[sample_idx],
+                y_test[sample_idx],
+                len(feature_names),
+                sample_idx,
+                args,
+            )
+            for sample_idx in range(num_samples)
+        ]
 
-    args_list = [
-        (explainer, model, bb, x_test[sample_idx], y_test[sample_idx], len(feature_names), sample_idx)
-        for sample_idx in range(num_samples)
-    ]
-
-    with Pool(20) as pool:
+    with Pool(40) as pool:
         results = pool.starmap(explain_sample, args_list)
 
-    explanations, predictions_bb, local_predictions, features_in_the_rule, times = map(
+    explanations, predictions_bb, local_predictions, features_in_the_rule, times, indexes = map(
         list, zip(*results, strict=False)
     )
-
     computed_explanations = {}
-    for index in range(num_samples):
-        computed_explanations[index] = (explanations[index], predictions_bb[index], features_in_the_rule[index])
+    if args.explanation_type == "lore":
+        for index in indexes:
+            computed_explanations[index] = explanations[index]
+        fidelity = np.mean(local_predictions)
+        fidelity_std = np.std(local_predictions)
+    else:
+        for index in indexes:
+            computed_explanations[index] = (explanations[index], predictions_bb[index], features_in_the_rule[index])
+        fidelity = accuracy_score(predictions_bb, local_predictions)
 
     file_name = args.explanation_type + f"_{args.validation_seed}" + ".pkl"
     store_path = Path(args.store_path) / file_name
+
     with Path(store_path).open("wb") as f:
         # store the computed_explanations dictionary as a json file
         dill.dump(computed_explanations, f)
 
-    fidelity = accuracy_score(predictions_bb, local_predictions)
-    print(Counter(predictions_bb), Counter(local_predictions))
+    # print(Counter(predictions_bb), Counter(local_predictions))
     wandb_run = setup_wandb(args, project_name="comparison_tango", num_samples=num_samples)
     wandb_run.log(
         {
             "fidelity": fidelity,
+            "fidelity_std": fidelity_std,
             "Total Time": np.mean(times),
             "Total Time Std": np.std(times),
             "Total Time (sec)": np.mean(times) / 1e6,
