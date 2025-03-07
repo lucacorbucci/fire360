@@ -75,7 +75,7 @@ class Explainer:
                 )
             case "lore":
                 train_df_tmp = copy.copy(train_df)
-                train_df_tmp = train_df_tmp.drop(columns=["income_binary"])
+                train_df_tmp = train_df_tmp.drop(columns=[target_name])
 
                 scaler = MinMaxScaler()
                 _ = scaler.fit_transform(train_df_tmp)
@@ -83,9 +83,9 @@ class Explainer:
                 model = MyModel(model=model.model, scaler=scaler)
                 bbox = sklearn_classifier_bbox.sklearnBBox(model)
 
-                train_df["income_binary"] = [int(x) for x in train_df["income_binary"]]
-                train_df["income_binary"] = train_df["income_binary"].astype("category")
-                self.dataset = TabularDataset.from_dict(train_df, class_name="income_binary")
+                train_df[target_name] = [int(x) for x in train_df[target_name]]
+                train_df[target_name] = train_df[target_name].astype("category")
+                self.dataset = TabularDataset.from_dict(train_df, class_name=target_name)
                 self.dataset.df.dropna(inplace=True)
                 self.explainer = TabularRandomGeneratorLore(bbox, self.dataset)
 
