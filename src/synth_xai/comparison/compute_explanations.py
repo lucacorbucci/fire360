@@ -116,7 +116,7 @@ if __name__ == "__main__":
         target_name=outcome_variable_name,
     )
     multiprocess.set_start_method("spawn")
-    num_samples = min(1000, len(test_data))
+    num_samples = min(20000, len(test_data))
 
     def explain_sample(
         explainer: Explainer,
@@ -127,11 +127,13 @@ if __name__ == "__main__":
         num_features: int,
         index: int,
         args: argparse.Namespace,
+        lore_x_sample: np.ndarray = None,
+        lore_y_sample: int = None,
     ) -> tuple[list, int, int, list]:
         if index % 100 == 0:
             logger.info(f"Explaining sample {index}")
-        x_sample = torch.tensor([sample])
-        y_sample = torch.tensor([y_sample], dtype=torch.float32)
+        x_sample = torch.tensor([sample if lore_x_sample is None else lore_x_sample], dtype=torch.float32)
+        y_sample = torch.tensor([y_sample if lore_y_sample is None else lore_y_sample], dtype=torch.float32)
 
         bb.to("cuda" if torch.cuda.is_available() else "cpu")
         sample_pred_bb = make_predictions(x_sample, y_sample, bb)
@@ -143,21 +145,13 @@ if __name__ == "__main__":
 
         start_explanation_time = datetime.datetime.now()
 
-        if args.explanation_type == "lore":
-            explanation, fidelity_sample, feat_in_the_rule = explainer.explain_instance(
-                sample, predict_fn, sample_pred_bb[0].item()
-            )
-        else:
-            explanation, local_pred, feat_in_the_rule = explainer.explain_instance(
-                sample, predict_fn, sample_pred_bb[0].item()
-            )
+        explanation, local_pred, feat_in_the_rule = explainer.explain_instance(
+            sample, predict_fn, sample_pred_bb[0].item()
+        )
 
         end_time = datetime.datetime.now()
         total_time = (end_time - start_explanation_time).microseconds
-        if args.explanation_type == "lore":
-            return explanation, sample_pred_bb[0].item(), fidelity_sample, feat_in_the_rule, total_time, index
-        else:
-            return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index
+        return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index
 
     if args.explanation_type == "lore":
         args_list = [
@@ -170,6 +164,8 @@ if __name__ == "__main__":
                 len(feature_names),
                 sample_idx,
                 args,
+                x_test[sample_idx],
+                y_test[sample_idx],
             )
             for sample_idx in range(num_samples)
         ]
@@ -188,7 +184,7 @@ if __name__ == "__main__":
             for sample_idx in range(num_samples)
         ]
 
-    with Pool(40) as pool:
+    with Pool(20) as pool:
         results = pool.starmap(explain_sample, args_list)
 
     explanations, predictions_bb, local_predictions, features_in_the_rule, times, indexes = map(
@@ -198,12 +194,13 @@ if __name__ == "__main__":
     if args.explanation_type == "lore":
         for index in indexes:
             computed_explanations[index] = explanations[index]
-        fidelity = np.mean(local_predictions)
-        fidelity_std = np.std(local_predictions)
     else:
         for index in indexes:
             computed_explanations[index] = (explanations[index], predictions_bb[index], features_in_the_rule[index])
-        fidelity = accuracy_score(predictions_bb, local_predictions)
+
+    print(f"Predictions BB: {Counter(predictions_bb)}")
+    print(f"Local Predictions: {Counter(local_predictions)}")
+    fidelity = accuracy_score(predictions_bb, local_predictions)
 
     file_name = args.explanation_type + f"_{args.validation_seed}" + ".pkl"
     store_path = Path(args.store_path) / file_name
@@ -217,7 +214,6 @@ if __name__ == "__main__":
     wandb_run.log(
         {
             "fidelity": fidelity,
-            "fidelity_std": fidelity_std,
             "Total Time": np.mean(times),
             "Total Time Std": np.std(times),
             "Total Time (sec)": np.mean(times) / 1e6,
