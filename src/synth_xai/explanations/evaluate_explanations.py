@@ -182,17 +182,54 @@ if __name__ == "__main__":
 
         return coefficients
 
+    def pre_process_shap_explanations(explanation_data: list) -> tuple[list[dict], dict]:
+        if (
+            Path(args.artifacts_path + f"pre_processed_shap_values.pkl").exists()
+            and Path(args.artifacts_path + f"pre_processed_coefficients.pkl").exists()
+        ):
+            logger.info("Loading shap values from disk")
+            with open(args.artifacts_path + f"pre_processed_shap_values.pkl", "rb") as f:
+                pre_processed_data = dill.load(f)
+            with open(args.artifacts_path + f"pre_processed_coefficients.pkl", "rb") as f:
+                coefficients = dill.load(f)
+        else:
+            pre_processed_data = [{}, {}]
+            coefficients = {}
+            for index in explanation_data[0].keys():
+                coefficients[index] = [coeff for _, coeff in explanation_data[0][index][0]]
+                pre_processed_data[0][index] = [
+                    feature_name
+                    for feature_name, _ in sorted(explanation_data[0][index][0], key=lambda x: abs(x[1]), reverse=True)
+                ]
+                pre_processed_data[1][index] = [
+                    feature_name
+                    for feature_name, _ in sorted(explanation_data[1][index][0], key=lambda x: abs(x[1]), reverse=True)
+                ]
+
+            with open(args.artifacts_path + f"pre_processed_shap_values.pkl", "wb") as f:
+                dill.dump(pre_processed_data, f)
+        return pre_processed_data, coefficients
+
     test_data = test_data.iloc[explained_indexes]
 
     if args.explanation_type in ["logistic", "svm"]:
         coefficients = pre_process_coefficients(explanation_data)
-    elif args.explanation_type in ["lime", "shap"]:
+    elif args.explanation_type in ["lime"]:
         coefficients = {}
+        pre_processed_data = [{}, {}]
         for index in explanation_data[0].keys():
             coefficients[index] = [coeff for _, coeff in explanation_data[0][index][0]]
+            pre_processed_data[0][index] = explanation_data[0][index][2]
+            pre_processed_data[1][index] = explanation_data[1][index][2]
+
     if is_our_explanation:
         explanation_data = preprocess_explanations(args, explanation_data)
         logger.info("Preprocessing explanations done!")
+
+    if args.explanation_type in ["shap"]:
+        explanation_data, coefficients = pre_process_shap_explanations(explanation_data)
+        logger.info("Preprocessing shap values done!")
+
     all_closest_rows = preprocess_distances(args, explanation_data, test_data, max(args.top_k) * 2, outcome_variable)
     logger.info("Preprocessing distances done!")
 
@@ -203,17 +240,13 @@ if __name__ == "__main__":
     def compute_stability(index: int, explanation_data: list, is_our_explanation: bool) -> float | bool:
         explanations = []
         if not is_our_explanation:
-            explanations.append(explanation_data[0][index][2])
-            explanations.append(explanation_data[1][index][2])
+            explanations.append(explanation_data[0][index])
+            explanations.append(explanation_data[1][index])
         else:
             explanations.append(explanation_data[0][index])
             explanations.append(explanation_data[1][index])
-        # try:
         stability = explainer_model.compute_stability(explanations)
         return stability
-        # except Exception as e:
-        #     logger.error(f"Error computing stability for index {index}: {e}", exc_info=True)
-        #     return False
 
     args_list = [(i, explanation_data, is_our_explanation) for i in explained_indexes]
     with Pool(10) as pool:
@@ -231,19 +264,15 @@ if __name__ == "__main__":
         closest_rows = [i for i in all_closest_rows[index] if i in explained_indexes]
         explanations = []
         if not is_our_explanation:
-            explanations.append(explanation_data[0][index][2])
+            explanations.append(explanation_data[0][index])
             for closest_row_index in closest_rows:
-                explanations.append(explanation_data[1][closest_row_index][2])
+                explanations.append(explanation_data[1][closest_row_index])
         else:
             explanations = [explanation_data[0][index]]
             for closest_row_index in closest_rows:
                 explanations.append(explanation_data[0][closest_row_index])
-        try:
-            robustness = explainer_model.compute_robustness(explanations=explanations, top_k=args.top_k)
-            return robustness
-        except Exception as e:
-            logger.error(f"Error computing robustness for index {index}: {e}", exc_info=True)
-            return False
+        robustness = explainer_model.compute_robustness(explanations=explanations, top_k=args.top_k)
+        return robustness
 
     args_list = [(i, explanation_data, is_our_explanation) for i in explained_indexes]
     with Pool(10) as pool:
