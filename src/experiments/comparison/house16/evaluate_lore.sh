@@ -1,0 +1,2 @@
+
+uv run python ../../../synth_xai/explanations/evaluate_explanations.py --dataset_name house16 --bb_path /home/lcorbucci/synth_xai/artifacts/house16/bb/house16_BB.pth --explanation_type lore --explanations lore_1.pkl lore_2.pkl --artifacts_path /home/lcorbucci/synth_xai/artifacts/house16/comparison_explanation/lore/ --top_k 3 5 8 10 20
