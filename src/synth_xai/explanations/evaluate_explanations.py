@@ -211,6 +211,17 @@ if __name__ == "__main__":
                 dill.dump(pre_processed_data, f)
         return pre_processed_data, coefficients
 
+    def preprocess_explanations_lore(explanation_data: list) -> list:
+        pre_processed_data = [{}, {}]
+        for index in list(explanation_data[0].keys()):
+            pre_processed_data[0][index] = [
+                premise["attr"] for premise in explanation_data[0][index]["rule"]["premises"]
+            ]
+            pre_processed_data[1][index] = [
+                premise["attr"] for premise in explanation_data[1][index]["rule"]["premises"]
+            ]
+        return pre_processed_data
+
     test_data = test_data.iloc[explained_indexes]
 
     if args.explanation_type in ["logistic", "svm"]:
@@ -230,6 +241,9 @@ if __name__ == "__main__":
     if args.explanation_type in ["shap"]:
         explanation_data, coefficients = pre_process_shap_explanations(explanation_data)
         logger.info("Preprocessing shap values done!")
+    if args.explanation_type in ["lore"]:
+        explanation_data = preprocess_explanations_lore(explanation_data)
+        logger.info("Preprocessing explanations done!")
 
     all_closest_rows = preprocess_distances(args, explanation_data, test_data, max(args.top_k) * 2, outcome_variable)
     logger.info("Preprocessing distances done!")
