@@ -21,6 +21,7 @@ import numpy as np
 import torch
 from loguru import logger
 from multiprocess import Pool
+from scipy.stats import sem
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.metrics import accuracy_score
 
@@ -43,11 +44,14 @@ parser.add_argument("--dataset_name", type=str, default=None, required=True)
 parser.add_argument("--bb_path", type=str, default=None, required=True)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--explanation_type", type=str, default=None, required=True)
+parser.add_argument("--lore_generator", type=str, default=None)
 parser.add_argument("--sweep", type=bool, default=False)
 parser.add_argument("--validation_seed", type=int, default=None)
 parser.add_argument("--num_processes", type=int, default=20, required=True)
 parser.add_argument("--k_means_k", type=int, default=100)
 parser.add_argument("--store_path", type=str, default=None, required=True)
+parser.add_argument("--num_explained_instances", type=int, default=20000)
+parser.add_argument("--project_name", type=str, default="comparison_tango")
 
 
 def signal_handler(_sig: int, frame: FrameType | None) -> None:
@@ -114,9 +118,10 @@ if __name__ == "__main__":
         k_means_k=args.k_means_k,
         train_df=train_df,
         target_name=outcome_variable_name,
+        lore_generator=args.lore_generator if args.lore_generator else None,
     )
     multiprocess.set_start_method("spawn")
-    num_samples = min(20000, len(test_data))
+    num_samples = min(args.num_explained_instances, len(test_data))
 
     def explain_sample(
         explainer: Explainer,
@@ -150,7 +155,7 @@ if __name__ == "__main__":
         )
 
         end_time = datetime.datetime.now()
-        total_time = (end_time - start_explanation_time).microseconds
+        total_time = (end_time - start_explanation_time).total_seconds()
         return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index
 
     if args.explanation_type == "lore":
@@ -184,7 +189,7 @@ if __name__ == "__main__":
             for sample_idx in range(num_samples)
         ]
 
-    with Pool(20) as pool:
+    with Pool(args.num_processes) as pool:
         results = pool.starmap(explain_sample, args_list)
 
     explanations, predictions_bb, local_predictions, features_in_the_rule, times, indexes = map(
@@ -210,14 +215,16 @@ if __name__ == "__main__":
         dill.dump(computed_explanations, f)
 
     # print(Counter(predictions_bb), Counter(local_predictions))
-    wandb_run = setup_wandb(args, project_name="comparison_tango", num_samples=num_samples)
+    wandb_run = setup_wandb(args, project_name=args.project_name, num_samples=num_samples)
     wandb_run.log(
         {
             "fidelity": fidelity,
-            "Total Time": np.mean(times),
-            "Total Time Std": np.std(times),
-            "Total Time (sec)": np.mean(times) / 1e6,
-            "Total Time Std (sec)": np.std(times) / 1e6,
+            # "Total Time": np.mean(times),
+            # "Total Time Std": np.std(times),
+            # "Total Time sem": sem(times),
+            "Total Time (sec)": np.mean(times),
+            "Total Time Std (sec)": np.std(times),
+            "Total Time sem (sec)": sem(times),
         }
     )
     logger.info(f"Final Fidelity: {fidelity}")
