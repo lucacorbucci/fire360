@@ -30,6 +30,7 @@ from explanation_utils import (
 )
 from loguru import logger
 from multiprocess import Pool
+from scipy.stats import sem
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.preprocessing import (
@@ -54,6 +55,8 @@ parser.add_argument("--explanation_type", type=str, default=None, required=True)
 parser.add_argument("--store_path", type=str, default=None, required=True)
 parser.add_argument("--num_processes", type=int, default=None, required=True)
 parser.add_argument("--explained_samples", type=int, default=None)
+parser.add_argument("--num_explained_instances", type=int, default=20000)
+parser.add_argument("--project_name", type=str, default="tango_eval")
 
 
 def signal_handler(_sig: int, frame: FrameType | None) -> None:
@@ -124,9 +127,10 @@ if __name__ == "__main__":
         synthetic_data: pd.DataFrame,
         outcome_variable: str,
     ) -> tuple[int, int, float, float, list[str], int, dict[str, int]]:
-        logger.info(f"Processing sample: {index}")
+        if index % 100 == 0:
+            logger.info(f"Explaining sample {index}")
         # Process one sample from the test data.
-        start_time = datetime.datetime.now()
+
         sample = test_data.iloc[[index]]
         x_sample = torch.tensor([x[index]])
         y_sample = torch.tensor([y[index]])
@@ -139,33 +143,29 @@ if __name__ == "__main__":
             k=args.top_k,
             y_name=outcome_variable,
         )
-        finish_ranking_time = datetime.datetime.now()
-
-        ranking_time = (finish_ranking_time - start_ranking_time).microseconds
-        logger.info(f"Ranking time: {ranking_time}")
 
         X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+        finish_ranking_time = datetime.datetime.now()
+        ranking_time = (finish_ranking_time - start_ranking_time).total_seconds()
         try:
+            start_explanation_time = datetime.datetime.now()
+
             explainer_model = ExplainerModel(explainer_type=args.explanation_type)
             explainer_model.grid_search(x_train=x_train, y_train=y_train, seed=args.validation_seed)
 
-            y_pred = explainer_model.predict(x_test)
-            accuracy_val = accuracy_score(y_test, y_pred)
-            f1_val = f1_score(y_test, y_pred, average="weighted")
-
-            start_explanation_time = datetime.datetime.now()
             sample_pred, explanation, threshold, feature = explainer_model.extract_explanation(
                 clf=explainer_model.best_model, y_name=outcome_variable, sample=sample
             )
-            finish_explanation_time = datetime.datetime.now()
-            explanation_time = (finish_explanation_time - start_explanation_time).microseconds
-            # logger.info(f"Extracted explanation: {explanation}")
-
             end_time = datetime.datetime.now()
-            total_time = (end_time - start_time).microseconds
+
+            explanation_time = (end_time - start_explanation_time).total_seconds()
+            total_time = explanation_time + ranking_time
 
             time = {"total_time": total_time, "ranking_time": ranking_time, "explanation_time": explanation_time}
+            y_pred = explainer_model.predict(x_test)
+            accuracy_val = accuracy_score(y_test, y_pred)
+            f1_val = f1_score(y_test, y_pred, average="weighted")
 
             return sample_pred_bb[0].item(), sample_pred[0], accuracy_val, f1_val, explanation, index, time
         except Exception as e:
@@ -182,8 +182,7 @@ if __name__ == "__main__":
             )
 
     # Run the processing in parallel.
-
-    num_samples = min(20000, len(test_data))
+    num_samples = min(args.num_explained_instances, len(test_data))
     args_list = [
         (i, test_data, x, y, bb, args, synthetic_data, outcome_variable)
         for i in range(num_samples if args.explained_samples is None else args.explained_samples)
@@ -213,7 +212,7 @@ if __name__ == "__main__":
     # compute the fidelity
     fidelity = accuracy_score(predictions_bb, predictions_dt)
     logger.info(f"Fidelity for file {synthetic_data_path.name}: {fidelity}")
-    wandb_run = setup_wandb(args, synthetic_data_path, num_samples)
+    wandb_run = setup_wandb(args, synthetic_data_path, num_samples, project_name=args.project_name)
 
     synthetiser = synthetic_data_path.name.split("_")[-1].split(".")[0]
     num_samples_generated = synthetic_data_path.name.split("_")[2]
@@ -230,18 +229,20 @@ if __name__ == "__main__":
             "Tree F1 Score": np.mean(f1_score),
             "Tree Accuracy Std": np.std(accuracy),
             "Tree F1 Score Std": np.std(f1_score),
-            "Total Time": np.mean(total_time),
-            "Total Time Std": np.std(total_time),
-            "Ranking Time": np.mean(ranking_time),
-            "Ranking Time Std": np.std(ranking_time),
-            "Explanation Time": np.mean(explanation_time),
-            "Explanation Time Std": np.std(explanation_time),
-            "Total Time (sec)": np.mean(total_time) / 1e6,
-            "Total Time Std (sec)": np.std(total_time) / 1e6,
-            "Ranking Time (sec)": np.mean(ranking_time) / 1e6,
-            "Ranking Time Std (sec)": np.std(ranking_time) / 1e6,
-            "Explanation Time (sec)": np.mean(explanation_time) / 1e6,
-            "Explanation Time Std (sec)": np.std(explanation_time) / 1e6,
+            # "Total Time": np.mean(total_time),
+            # "Total Time Std": np.std(total_time),
+            # "Total Time sem": sem(total_time),
+            # "Ranking Time": np.mean(ranking_time),
+            # "Ranking Time Std": np.std(ranking_time),
+            # "Explanation Time": np.mean(explanation_time),
+            # "Explanation Time Std": np.std(explanation_time),
+            "Total Time (sec)": np.mean(total_time),
+            "Total Time Std (sec)": np.std(total_time),
+            "Total Time sem (sec)": sem(total_time),
+            "Ranking Time (sec)": np.mean(ranking_time),
+            "Ranking Time Std (sec)": np.std(ranking_time),
+            "Explanation Time (sec)": np.mean(explanation_time),
+            "Explanation Time Std (sec)": np.std(explanation_time),
             "Failed Explanations": len(failed_explanations),
             "Failed Explanations Indexes": failed_explanations,
         }
