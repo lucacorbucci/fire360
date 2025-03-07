@@ -146,4 +146,5 @@ def prepare_data(args: argparse.Namespace, current_path: Path) -> tuple[DataLoad
         feature_names,
         categorical_feature_names,
         class_names,
+        outcome_variable,
     )
