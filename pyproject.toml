@@ -27,6 +27,9 @@ dependencies = [
     "aix360>=0.3.0",
     "lime>=0.2.0.1",
     "anchor-exp>=0.0.2.0",
+    "deap>=1.4.2",
+    "category-encoders>=2.8.0",
+    "bitarray>=3.1.0",
 ]
 
 [project.scripts]
