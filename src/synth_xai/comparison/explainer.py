@@ -120,9 +120,13 @@ class Explainer:
                     self.feature_names,
                 )
             case "lore":
-                explanation = self.explainer.explain(instance)
-                fidelity = explanation["fidelity"]
-                return (explanation, fidelity, [premise["attr"] for premise in explanation["rule"]["premises"]])
+                explanation = self.explainer.explain(instance, num_instances=5000)
+                prediction_surrogate = explanation["prediction_surrogate"]
+                return (
+                    explanation,
+                    prediction_surrogate,
+                    [premise["attr"] for premise in explanation["rule"]["premises"]],
+                )
             case _:
                 raise ValueError("Invalid explainer name")
                 return []
