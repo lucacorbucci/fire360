@@ -9,6 +9,7 @@ import pandas as pd
 import shap
 import torch
 from lime.lime_tabular import LimeTabularExplainer
+from loguru import logger
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import (
     MinMaxScaler,
@@ -16,7 +17,7 @@ from sklearn.preprocessing import (
 
 from lore_sa.bbox import sklearn_classifier_bbox
 from lore_sa.dataset import TabularDataset
-from lore_sa.lore import TabularRandomGeneratorLore
+from lore_sa.lore import TabularGeneticGeneratorLore, TabularRandomGeneratorLore
 from synth_xai.bb_architectures import MultiClassModel, SimpleModel
 from synth_xai.explanations.explanation_utils import load_bb
 from synth_xai.utils import prepare_adult
@@ -51,6 +52,7 @@ class Explainer:
         k_means_k: int = 100,
         train_df: pd.DataFrame = None,
         target_name: str = None,
+        lore_generator: str = "random",
     ) -> None:
         self.explanation_type = args.explanation_type
         self.feature_names = feature_names
@@ -87,7 +89,12 @@ class Explainer:
                 train_df[target_name] = train_df[target_name].astype("category")
                 self.dataset = TabularDataset.from_dict(train_df, class_name=target_name)
                 self.dataset.df.dropna(inplace=True)
-                self.explainer = TabularRandomGeneratorLore(bbox, self.dataset)
+
+                if lore_generator == "genetic":
+                    logger.info("Using genetic generator")
+                    self.explainer = TabularGeneticGeneratorLore(bbox, self.dataset)
+                else:
+                    self.explainer = TabularRandomGeneratorLore(bbox, self.dataset)
 
     def explain_instance(
         self,
