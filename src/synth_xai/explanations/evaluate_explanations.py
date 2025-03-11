@@ -88,6 +88,7 @@ if __name__ == "__main__":
         "lime": "logistic",
         "shap": "logistic",
         "lore": "dt",
+        "lore_genetic": "dt",
     }
 
     explainer_model = ExplainerModel(
@@ -233,6 +234,7 @@ if __name__ == "__main__":
             coefficients[index] = [coeff for _, coeff in explanation_data[0][index][0]]
             pre_processed_data[0][index] = explanation_data[0][index][2]
             pre_processed_data[1][index] = explanation_data[1][index][2]
+        explanation_data = pre_processed_data
 
     if is_our_explanation:
         explanation_data = preprocess_explanations(args, explanation_data)
@@ -241,7 +243,7 @@ if __name__ == "__main__":
     if args.explanation_type in ["shap"]:
         explanation_data, coefficients = pre_process_shap_explanations(explanation_data)
         logger.info("Preprocessing shap values done!")
-    if args.explanation_type in ["lore"]:
+    if args.explanation_type in ["lore", "lore_genetic"]:
         explanation_data = preprocess_explanations_lore(explanation_data)
         logger.info("Preprocessing explanations done!")
 
