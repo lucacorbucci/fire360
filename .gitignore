@@ -20,3 +20,9 @@ train_ds
 *.pth
 *.npy
 *.bkp
+debug.ipynb
+test.ipynb
+src/results/results.ipynb
+src/synth_xai/comparison/explainers.ipynb
+src/synth_xai/comparison/adult.data
+src/synth_xai/comparison/compute_explanations copy.py
