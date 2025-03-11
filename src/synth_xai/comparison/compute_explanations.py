@@ -150,13 +150,13 @@ if __name__ == "__main__":
 
         start_explanation_time = datetime.datetime.now()
 
-        explanation, local_pred, feat_in_the_rule = explainer.explain_instance(
+        explanation, local_pred, feat_in_the_rule, fidelity_method = explainer.explain_instance(
             sample, predict_fn, sample_pred_bb[0].item()
         )
 
         end_time = datetime.datetime.now()
         total_time = (end_time - start_explanation_time).total_seconds()
-        return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index
+        return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index, fidelity_method
 
     if args.explanation_type == "lore":
         args_list = [
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     with Pool(args.num_processes) as pool:
         results = pool.starmap(explain_sample, args_list)
 
-    explanations, predictions_bb, local_predictions, features_in_the_rule, times, indexes = map(
+    explanations, predictions_bb, local_predictions, features_in_the_rule, times, indexes, fidelity_method = map(
         list, zip(*results, strict=False)
     )
     computed_explanations = {}
@@ -219,6 +219,8 @@ if __name__ == "__main__":
     wandb_run.log(
         {
             "fidelity": fidelity,
+            "fidelity_method": np.mean(fidelity_method),
+            "fidelity_method_std": np.std(fidelity_method),
             # "Total Time": np.mean(times),
             # "Total Time Std": np.std(times),
             # "Total Time sem": sem(times),

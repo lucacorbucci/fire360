@@ -101,7 +101,7 @@ class Explainer:
         instance: pd.Series,
         predict_fn: typing.Callable,
         prediction_bb: int = None,
-    ) -> tuple[list, int, list]:
+    ) -> tuple[list, int, list, float]:
         match self.explanation_type:
             case "lime":
                 # Explain instance using LimeTabularExplainer
@@ -114,25 +114,24 @@ class Explainer:
                 clean_features = [re.sub(r"[<>]=?|\d+(\.\d+)?", "", feature).strip() for feature in feature_names]
 
                 local_pred = 0 if explanation.local_pred[0] < 0.5 else 1
-                return explanation.as_list(), local_pred, clean_features
+                fidelity_lime = explanation.score
+                return explanation.as_list(), local_pred, clean_features, fidelity_lime
             case "shap":
                 # Explain instance using SHAP
                 shap_values = self.explainer(instance)
 
                 feature_importance = shap_values.values[:, prediction_bb]
 
-                return (
-                    list(zip(self.feature_names, feature_importance)),
-                    prediction_bb,
-                    self.feature_names,
-                )
+                return (list(zip(self.feature_names, feature_importance)), prediction_bb, self.feature_names, None)
             case "lore":
                 explanation = self.explainer.explain(instance, num_instances=5000)
                 prediction_surrogate = explanation["prediction_surrogate"]
+                fidelity_lore = explanation["fidelity"]
                 return (
                     explanation,
                     prediction_surrogate,
                     [premise["attr"] for premise in explanation["rule"]["premises"]],
+                    fidelity_lore,
                 )
             case _:
                 raise ValueError("Invalid explainer name")
