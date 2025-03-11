@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import os
 import random
 import signal
 import sys
@@ -94,8 +95,11 @@ if __name__ == "__main__":
     x, y, scaler = transform_input_data(train_data=train_data, test_data=test_data, outcome_variable=outcome_variable)
     evaluate_bb(x, y, bb)
 
-    random.seed(args.validation_seed)
     torch.manual_seed(args.validation_seed)
+    random.seed(args.validation_seed)
+    np.random.seed(args.validation_seed)
+    os.environ["PYTHONHASHSEED"] = str(args.validation_seed)
+
     torch.cuda.manual_seed(args.validation_seed)
     torch.cuda.manual_seed_all(args.validation_seed)
     torch.backends.cudnn.deterministic = True
