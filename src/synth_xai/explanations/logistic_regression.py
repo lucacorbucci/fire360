@@ -29,7 +29,6 @@ def grid_search_lr(x_train: np.ndarray, y_train: np.ndarray, seed: int) -> Logis
     )
     grid_search.fit(x_train, y_train)
     best_model = grid_search.best_estimator_
-    print(f"Best model accuracy: {grid_search.best_score_}")
     best_model.fit(x_train, y_train)
     return best_model
 
