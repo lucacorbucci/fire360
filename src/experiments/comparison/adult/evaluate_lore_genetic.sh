@@ -1,2 +1,2 @@
 
-uv run python ../../../synth_xai/explanations/evaluate_explanations.py --dataset_name adult --bb_path /home/lcorbucci/synth_xai/artifacts/adult/bb/adult_BB.pth --explanation_type lore_genetic --explanations lore_5.pkl lore_6.pkl --artifacts_path /home/lcorbucci/synth_xai/artifacts/adult/comparison_explanation/lore/ --top_k 3 5 8 10 20
+uv run python ../../../synth_xai/explanations/evaluate_explanations.py --dataset_name adult --bb_path /home/lcorbucci/synth_xai/artifacts/adult/bb/adult_BB.pth --explanation_type lore_genetic --explanations lore_20.pkl lore_21.pkl --artifacts_path /home/lcorbucci/synth_xai/artifacts/adult/comparison_explanation/lore/ --top_k 3 5 8 10 20
