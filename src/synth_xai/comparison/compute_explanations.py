@@ -52,6 +52,7 @@ parser.add_argument("--k_means_k", type=int, default=100)
 parser.add_argument("--store_path", type=str, default=None, required=True)
 parser.add_argument("--num_explained_instances", type=int, default=20000)
 parser.add_argument("--project_name", type=str, default="comparison_tango")
+parser.add_argument("--neigh_size", type=int, default=5000)
 
 
 def signal_handler(_sig: int, frame: FrameType | None) -> None:
@@ -151,7 +152,10 @@ if __name__ == "__main__":
         start_explanation_time = datetime.datetime.now()
 
         explanation, local_pred, feat_in_the_rule, fidelity_method = explainer.explain_instance(
-            sample, predict_fn, sample_pred_bb[0].item()
+            sample,
+            predict_fn,
+            sample_pred_bb[0].item(),
+            neigh_size=args.neigh_size,
         )
 
         end_time = datetime.datetime.now()
@@ -219,8 +223,8 @@ if __name__ == "__main__":
     wandb_run.log(
         {
             "fidelity": fidelity,
-            "fidelity_method": np.mean(fidelity_method),
-            "fidelity_method_std": np.std(fidelity_method),
+            "fidelity_method": np.mean(fidelity_method) if all(fidelity_method) else 0,
+            "fidelity_method_std": np.std(fidelity_method) if all(fidelity_method) else 0,
             # "Total Time": np.mean(times),
             # "Total Time Std": np.std(times),
             # "Total Time sem": sem(times),
