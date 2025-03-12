@@ -9,7 +9,6 @@ import pandas as pd
 import shap
 import torch
 from lime.lime_tabular import LimeTabularExplainer
-from loguru import logger
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import (
     MinMaxScaler,
@@ -91,7 +90,6 @@ class Explainer:
                 self.dataset.df.dropna(inplace=True)
 
                 if lore_generator == "genetic":
-                    logger.info("Using genetic generator")
                     self.explainer = TabularGeneticGeneratorLore(bbox, self.dataset)
                 else:
                     self.explainer = TabularRandomGeneratorLore(bbox, self.dataset)
@@ -101,6 +99,7 @@ class Explainer:
         instance: pd.Series,
         predict_fn: typing.Callable,
         prediction_bb: int = None,
+        neigh_size: int = 5000,
     ) -> tuple[list, int, list, float]:
         match self.explanation_type:
             case "lime":
@@ -109,6 +108,7 @@ class Explainer:
                     instance,
                     predict_fn,
                     num_features=len(self.feature_names),
+                    num_samples=neigh_size,
                 )
                 feature_names = [feature for feature, weight in explanation.as_list()]
                 clean_features = [re.sub(r"[<>]=?|\d+(\.\d+)?", "", feature).strip() for feature in feature_names]
@@ -124,7 +124,7 @@ class Explainer:
 
                 return (list(zip(self.feature_names, feature_importance)), prediction_bb, self.feature_names, None)
             case "lore":
-                explanation = self.explainer.explain(instance, num_instances=5000)
+                explanation = self.explainer.explain(instance, num_instances=neigh_size)
                 prediction_surrogate = explanation["prediction_surrogate"]
                 fidelity_lore = explanation["fidelity"]
                 return (
