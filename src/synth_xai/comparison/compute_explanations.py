@@ -231,6 +231,7 @@ if __name__ == "__main__":
             "Total Time (sec)": np.mean(times),
             "Total Time Std (sec)": np.std(times),
             "Total Time sem (sec)": sem(times),
+            "neigh_size": args.neigh_size,
         }
     )
     logger.info(f"Final Fidelity: {fidelity}")
