@@ -670,7 +670,7 @@ const ModelExplanationDashboard = () => {
 	return (
 		<div className="p-6 max-w-6xl mx-auto space-y-6 bg-gray-50">
 			<h1 className="text-3xl font-bold text-center mb-6">
-				Explainable AI Dashboard
+				Fire360 Dashboard
 			</h1>
 
 			{/* Controls */}
@@ -1009,7 +1009,7 @@ const ModelExplanationDashboard = () => {
 
 			{/* Similar Samples */}
 			<div className="bg-white shadow-md rounded-lg p-6">
-				<h2 className="text-xl font-semibold mb-4">
+				<h2 className="text-3xl font-semibold mb-4">
 					Exemplar-Based Explanation
 				</h2>
 				<p className="text-gray-700 mb-4">
