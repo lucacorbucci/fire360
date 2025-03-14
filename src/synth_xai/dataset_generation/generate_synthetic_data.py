@@ -15,6 +15,7 @@ from types import FrameType
 
 import dill
 import pandas as pd
+import wandb
 from loguru import logger
 from sdv.metadata import Metadata
 from sdv.single_table import CTGANSynthesizer, TVAESynthesizer
@@ -53,7 +54,6 @@ from synthcity.metrics.eval_statistical import (
 )
 from synthcity.plugins.core.dataloader import GenericDataLoader
 
-import wandb
 from synth_xai.utils import (
     prepare_adult,
     prepare_breast_cancer,
@@ -622,26 +622,64 @@ if __name__ == "__main__":
 
     # measure the time needed to generate the samples
     samples_to_generate = list(args.samples_to_generate)
+    print(samples_to_generate, synthesizers)
     for generated_dataset_size in samples_to_generate:
+        print("generated_dataset_size", generated_dataset_size)
         for epochs, synthesizer in synthesizers:
-            logger.info(f"Generating {generated_dataset_size} samples for the {args.dataset_name} dataset...")
+            if Path(
+                f"{args.store_path}{args.dataset_name}/synthetic_data/synthetic_data_{generated_dataset_size}_epochs_{epochs}_synthethizer_name_{args.synthesizer_name}.csv"
+            ).exists():
+                logger.info(f"Loading synthetic data with {generated_dataset_size} samples...")
+                synthetic_data = pd.read_csv(
+                    Path(
+                        f"{args.store_path}{args.dataset_name}/synthetic_data/synthetic_data_{generated_dataset_size}_epochs_{epochs}_synthethizer_name_{args.synthesizer_name}.csv"
+                    )
+                )
+                logger.info(f"Loaded synthetic data with {generated_dataset_size} samples...")
 
-            start = time.time()
-            synthetic_data = synthesizer.sample(num_rows=generated_dataset_size)
+                wandb_run = wandb.init(
+                    project="tango_generation",
+                    name=f"generated_dataset_size_{generated_dataset_size}_epochs_{epochs}",
+                    config={
+                        "dataset": args.dataset_name,
+                        "samples_to_generate": generated_dataset_size,
+                        "epochs": epochs,
+                        "synthesizer": args.synthesizer_name,
+                    },
+                )
 
-            if has_object_dtypes(synthetic_data):
-                synthetic_data = synthetic_data.apply(pd.to_numeric, errors="coerce")
+                logger.info("Evaluating the quality of the synthetic data...")
 
-            end_time = time.time()
-            elapsed_time = end_time - start
+                # evaluate quality
+                metrics = compute_metrics(real_data, synthetic_data, outcome_variable)
+                logger.info("Evaluated the quality")
 
-            # save synthetic data
-            synthetic_data.to_csv(
-                Path(
-                    f"{args.store_path}{args.dataset_name}/synthetic_data/synthetic_data_{generated_dataset_size}_epochs_{epochs}_synthethizer_name_{args.synthesizer_name}.csv"
-                ),
-                index=False,
-            )
+                wandb_run.log(metrics["sanity"])
+                wandb_run.log(metrics["statistical"])
+                wandb_run.log(metrics["quality"])
+                wandb_run.log(metrics["detection"])
+                wandb_run.log(metrics["privacy"])
+
+                wandb_run.finish()
+            else:
+                logger.info(f"Generating {generated_dataset_size} samples for the {args.dataset_name} dataset...")
+
+                start = time.time()
+                synthetic_data = synthesizer.sample(num_rows=generated_dataset_size)
+
+                if has_object_dtypes(synthetic_data):
+                    synthetic_data = synthetic_data.apply(pd.to_numeric, errors="coerce")
+
+                end_time = time.time()
+                elapsed_time = end_time - start
+
+                # save synthetic data
+                synthetic_data.to_csv(
+                    Path(
+                        f"{args.store_path}{args.dataset_name}/synthetic_data/synthetic_data_{generated_dataset_size}_epochs_{epochs}_synthethizer_name_{args.synthesizer_name}.csv"
+                    ),
+                    index=False,
+                )
 
             wandb_run = wandb.init(
                 project="tango_generation",
@@ -658,11 +696,11 @@ if __name__ == "__main__":
 
             # evaluate quality
             metrics = compute_metrics(real_data, synthetic_data, outcome_variable)
-            wandb.log({"generation_time": elapsed_time})
-            wandb.log(metrics["sanity"])
-            wandb.log(metrics["statistical"])
-            wandb.log(metrics["quality"])
-            wandb.log(metrics["detection"])
-            wandb.log(metrics["privacy"])
+            wandb_run.log({"generation_time": elapsed_time})
+            wandb_run.log(metrics["sanity"])
+            wandb_run.log(metrics["statistical"])
+            wandb_run.log(metrics["quality"])
+            wandb_run.log(metrics["detection"])
+            wandb_run.log(metrics["privacy"])
 
             wandb_run.finish()
