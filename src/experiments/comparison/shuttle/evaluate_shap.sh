@@ -1,2 +1,3 @@
 
-uv run python ../../../synth_xai/explanations/evaluate_explanations.py --dataset_name shuttle --bb_path /home/lcorbucci/synth_xai/artifacts/shuttle/bb/shuttle_BB.pth --explanation_type shap --explanations shap_11.pkl shap_12.pkl --artifacts_path /home/lcorbucci/synth_xai/artifacts/shuttle/comparison_explanation/shap/ --top_k 3 5 8 10 20
+uv run python ../../../synth_xai/explanations/evaluate_explanations.py --dataset_name shuttle --bb_path /home/lcorbucci/synth_xai/artifacts/shuttle/bb/shuttle_BB.pth --explanation_type shap --explanations shap_11.pkl shap_12.pkl --artifacts_path /home/lcorbucci/synth_xai/artifacts/shuttle/comparison_explanation/shap/ --top_k 3 5 8 10 15 20  --wandb_project_name new_metrics_computation
+ 
