@@ -1,8 +1,11 @@
-# personalized_explanations
+# FIRE360
 
-## Setup
+A comprehensive and fast local explanation approach tailored for tabular data.
 
+## How to use
 
-### Datasets
+You can find an example of how to use FIRE360 in the `example` folder. 
 
-The Diabetes Readmission dataset can be downloaded from the following link: https://huggingface.co/datasets/imodels/diabetes-readmission/tree/main
+## Visualization of the results
+
+We created a simple dashboard to visualize all the explanations computed with our approach. You can find the code in the `UI` folder, the dashboard is also available here: [FIRE360 Dashboard](https://heroic-dasik-a43ca2.netlify.app/).
