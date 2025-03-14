@@ -37,6 +37,8 @@ parser.add_argument("--explanation_type", type=str, default=None, required=True)
 parser.add_argument("--top_k", type=int, nargs="+", default=None, required=True)
 parser.add_argument("--explanations", type=str, nargs="+", default=None, required=True)
 parser.add_argument("--artifacts_path", type=str, default=None, required=True)
+parser.add_argument("--wandb_project_name", type=str, default=None, required=True)
+parser.add_argument("--neigh_size", type=int, default=-1)
 
 
 def signal_handler(_sig: int, frame: FrameType | None) -> None:
@@ -54,6 +56,9 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     args = parser.parse_args()
+
+    if args.neigh_size == -1 and not args.explanation_type in ["shap"]:
+        raise ValueError("Neigh size is required for all explanations except for SHAP")
 
     current_script_path = Path(__file__).resolve().parent
 
@@ -79,7 +84,6 @@ if __name__ == "__main__":
 
         with open(args.artifacts_path + explanation, "rb") as f:
             explanation_data.append(dill.load(f))
-
     total_explanations = len(explanation_data[0])
     logger.info(f"Total explanations: {total_explanations}")
     is_our_explanation = args.explanation_type in ["logistic", "svm", "dt", "knn"]
@@ -98,15 +102,15 @@ if __name__ == "__main__":
     )
     explained_indexes = list(explanation_data[0].keys())
 
-    wandb_run = setup_wandb(args, num_samples=total_explanations, project_name="tango_explanation_metrics")
+    wandb_run = setup_wandb(args, num_samples=total_explanations, project_name=args.wandb_project_name)
 
     metrics = {}
 
     def preprocess_explanations(args: argparse.Namespace, explanation_data: list) -> list:
         pre_processed_data = [{}, {}]
-        if Path(args.artifacts_path + f"pre_processed_{args.explanation_type}.pkl").exists():
+        if Path(args.artifacts_path + f"pre_processed_{args.explanation_type}_{args.neigh_size}.pkl").exists():
             logger.info("Loading explanations from disk")
-            with open(args.artifacts_path + f"pre_processed_{args.explanation_type}.pkl", "rb") as f:
+            with open(args.artifacts_path + f"pre_processed_{args.explanation_type}_{args.neigh_size}.pkl", "rb") as f:
                 pre_processed_data = dill.load(f)
         else:
             logger.info("Preprocessing explanations")
@@ -124,7 +128,7 @@ if __name__ == "__main__":
                     )
                     return False
 
-            with Pool(10) as pool:
+            with Pool(20) as pool:
                 results = pool.map(parse_explanation, explained_indexes)
 
             if False in results:
@@ -133,7 +137,7 @@ if __name__ == "__main__":
             for index, explanation_0, explanation_1 in results:
                 pre_processed_data[0][index] = explanation_0
                 pre_processed_data[1][index] = explanation_1
-            with open(args.artifacts_path + f"pre_processed_{args.explanation_type}.pkl", "wb") as f:
+            with open(args.artifacts_path + f"pre_processed_{args.explanation_type}_{args.neigh_size}.pkl", "wb") as f:
                 dill.dump(pre_processed_data, f)
 
         logger.info("Preprocessing explanations done!")
@@ -147,8 +151,8 @@ if __name__ == "__main__":
         outcome_variable: str,
     ) -> dict:
         all_closest_rows = {}
-        if os.path.exists(args.artifacts_path + "closest_rows.pkl"):
-            with open(args.artifacts_path + "closest_rows.pkl", "rb") as f:
+        if os.path.exists(args.artifacts_path + f"closest_rows_{args.neigh_size}.pkl"):
+            with open(args.artifacts_path + f"closest_rows_{args.neigh_size}.pkl", "rb") as f:
                 all_closest_rows = dill.load(f)
         else:
 
@@ -157,42 +161,42 @@ if __name__ == "__main__":
                 closest_rows = find_similar_samples(test_data, sample, top_k, outcome_variable, index)
                 return index, closest_rows
 
-            with Pool(10) as pool:
+            with Pool(20) as pool:
                 results = pool.map(compute_closest_rows, explained_indexes)
                 all_closest_rows = dict(results)
 
-            with open(args.artifacts_path + "closest_rows.pkl", "wb") as f:
+            with open(args.artifacts_path + f"closest_rows_{args.neigh_size}.pkl", "wb") as f:
                 dill.dump(all_closest_rows, f)
         return all_closest_rows
 
     def pre_process_coefficients(explanation_data: list) -> dict[int, list]:
-        if Path(args.artifacts_path + f"coefficients_{args.explanation_type}.pkl").exists():
+        if Path(args.artifacts_path + f"coefficients_{args.explanation_type}_{args.neigh_size}.pkl").exists():
             logger.info("Loading coefficients from disk")
-            with open(args.artifacts_path + f"coefficients_{args.explanation_type}.pkl", "rb") as f:
+            with open(args.artifacts_path + f"coefficients_{args.explanation_type}_{args.neigh_size}.pkl", "rb") as f:
                 coefficients = dill.load(f)
         else:
 
             def extract_coefficients(index: int) -> tuple[int, list]:
                 return index, explainer_model.parse_coefficients(str(explanation_data[0][index]))
 
-            with Pool(10) as pool:
+            with Pool(20) as pool:
                 results = pool.map(extract_coefficients, explained_indexes)
 
             coefficients = dict(results)
-            with open(args.artifacts_path + f"coefficients_{args.explanation_type}.pkl", "wb") as f:
+            with open(args.artifacts_path + f"coefficients_{args.explanation_type}_{args.neigh_size}.pkl", "wb") as f:
                 dill.dump(coefficients, f)
 
         return coefficients
 
     def pre_process_shap_explanations(explanation_data: list) -> tuple[list[dict], dict]:
         if (
-            Path(args.artifacts_path + f"pre_processed_shap_values.pkl").exists()
-            and Path(args.artifacts_path + f"pre_processed_coefficients.pkl").exists()
+            Path(args.artifacts_path + f"pre_processed_shap_values_{args.neigh_size}.pkl").exists()
+            and Path(args.artifacts_path + f"pre_processed_coefficients_{args.neigh_size}.pkl").exists()
         ):
             logger.info("Loading shap values from disk")
-            with open(args.artifacts_path + f"pre_processed_shap_values.pkl", "rb") as f:
+            with open(args.artifacts_path + f"pre_processed_shap_values_{args.neigh_size}.pkl", "rb") as f:
                 pre_processed_data = dill.load(f)
-            with open(args.artifacts_path + f"pre_processed_coefficients.pkl", "rb") as f:
+            with open(args.artifacts_path + f"pre_processed_coefficients_{args.neigh_size}.pkl", "rb") as f:
                 coefficients = dill.load(f)
         else:
             pre_processed_data = [{}, {}]
@@ -208,7 +212,7 @@ if __name__ == "__main__":
                     for feature_name, _ in sorted(explanation_data[1][index][0], key=lambda x: abs(x[1]), reverse=True)
                 ]
 
-            with open(args.artifacts_path + f"pre_processed_shap_values.pkl", "wb") as f:
+            with open(args.artifacts_path + f"pre_processed_shap_values_{args.neigh_size}.pkl", "wb") as f:
                 dill.dump(pre_processed_data, f)
         return pre_processed_data, coefficients
 
@@ -266,7 +270,7 @@ if __name__ == "__main__":
         return stability
 
     args_list = [(i, explanation_data, is_our_explanation) for i in explained_indexes]
-    with Pool(10) as pool:
+    with Pool(20) as pool:
         stabilities = pool.starmap(compute_stability, args_list)
     stabilities = [stability for stability in stabilities if stability is not False]
     logger.info(f"Stabilities: {np.mean(stabilities)} +/- {np.std(stabilities)}")
@@ -292,7 +296,7 @@ if __name__ == "__main__":
         return robustness
 
     args_list = [(i, explanation_data, is_our_explanation) for i in explained_indexes]
-    with Pool(10) as pool:
+    with Pool(20) as pool:
         robustness_list = pool.starmap(compute_robustness, args_list)
 
     robustness_list = [robustness for robustness in robustness_list if robustness is not False]
@@ -321,5 +325,6 @@ if __name__ == "__main__":
         metrics["faithfulness"] = mean_faithfulness
         metrics["faithfulness_std"] = std_faithfulness
 
+    metrics["neigh_size"] = args.neigh_size
     wandb_run.log(metrics)
     wandb_run.finish()
