@@ -147,6 +147,7 @@ if __name__ == "__main__":
             k=args.top_k,
             y_name=outcome_variable,
         )
+        # print("len top_k:", len(top_k_samples))
 
         X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
