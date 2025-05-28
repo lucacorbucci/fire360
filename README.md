@@ -31,13 +31,14 @@ Training the synthethisers
 
 We trained the synthesizers using CTGAN and TVAE. In particular, following the suggestions of the developers of the [SDV library](https://docs.sdv.dev/sdv/single-table-data/modeling/synthesizers/ctgansynthesizer\#how-do-i-tune-the-hyperparameters-such-as-epochs-or-other-values), we trained the synthesizers using three possible values for the number of epochs (1000, 2500 and 5000). We report here in the Appendix two plots of the training losses obtained when training the synthesizers on Adult and Letter. In particular, in Figure~\ref{fig:adult_ctgan} and Figure~\ref{fig:letter_ctgan}, we show the losses of the discriminator and of the generator obtained when using the Adult dataset. As you can see, increasing the number of epochs of the training of the synthesizers has no visible impact on the two losses. Therefore, we decided to use 2500 epochs to create our final synthetic dataset using the CTGAN. 
 We report in Figure~\ref{fig:tvae_losses} a similar plot with the losses obtained when training the TVAE synthesizers with Adult and Letter. Even in this case, there is no big difference between the possible values of the epochs.
-![Loss of the discriminator and of the generator obtained when training the CTGAN with the Adult Dataset. Increasing the number of epochs has no visible impact on the two losses.](plots/gan_losses/adult_ctgan_losses.png)
 
-![Loss of the discriminator and of the generator obtained when training the CTGAN with the Letter Dataset. Increasing the number of epochs has no visible impact on the two losses.](plots/gan_losses/letter_ctgan_losses.png)
+![Loss of the discriminator and of the generator obtained when training the CTGAN with the Adult Dataset. Increasing the number of epochs has no visible impact on the two losses](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/adult_ctgan_losses.png?raw=true)
 
-![Adult tvae](plots/gan_losses/adult_tvae_loss.png)
+![Loss of the discriminator and of the generator obtained when training the CTGAN with the Letter Dataset. Increasing the number of epochs has no visible impact on the two losses.](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/letter_ctgan_losses.png?raw=true)
 
-![Letter tvae](plots/gan_losses/letter_tvae_loss.png)
+![Adult tvae](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/adult_tvae_loss.png?raw=true)
+
+![Letter tvae](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/letter_tvae_loss.png?raw=true)
 
 
 
