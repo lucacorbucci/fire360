@@ -16,7 +16,18 @@ import multiprocess
 import numpy as np
 import pandas as pd
 import torch
-from explanation_utils import (
+from loguru import logger
+from multiprocess import Pool
+from scipy.stats import sem
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.preprocessing import (
+    MinMaxScaler,
+)
+
+from fire360.bb_architectures import MultiClassModel, SimpleModel
+from fire360.explanations.explainer_model import ExplainerModel
+from fire360.explanations.explanation_utils import (
     evaluate_bb,
     find_top_closest_rows,
     get_test_data,
@@ -29,17 +40,6 @@ from explanation_utils import (
     setup_wandb,
     transform_input_data,
 )
-from loguru import logger
-from multiprocess import Pool
-from scipy.stats import sem
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.preprocessing import (
-    MinMaxScaler,
-)
-
-from fire360.bb_architectures import MultiClassModel, SimpleModel
-from fire360.explanations.explainer_model import ExplainerModel
 
 warnings.simplefilter("ignore")
 
@@ -130,7 +130,38 @@ if __name__ == "__main__":
         args: argparse.Namespace,
         synthetic_data: pd.DataFrame,
         outcome_variable: str,
-    ) -> tuple[int, int, float, float, list[str], int, dict[str, int]]:
+    ) -> tuple[float, float, float, float, float, list[str], int, dict[str, float]]:
+        """
+        Process a single sample from test data to generate explanations using synthetic neighbors.
+
+        This function extracts a sample from the test dataset, finds its closest neighbors in synthetic
+        data, trains an explainer model on these neighbors, and generates explanations for the sample's
+        prediction. It also measures the time taken for ranking neighbors and generating explanations.
+
+        Args:
+            index (int): Index of the sample to process from the test data
+            test_data (pd.DataFrame): Test dataset containing samples to explain
+            x (np.ndarray): Feature array corresponding to test data
+            y (np.ndarray): Target array corresponding to test data
+            bb (Any): Black box model to make predictions on samples
+            args (argparse.Namespace): Configuration arguments containing explanation parameters
+            synthetic_data (pd.DataFrame): Synthetic dataset used to find neighbors
+            outcome_variable (str): Name of the target/outcome variable column
+
+        Returns:
+            tuple: A tuple containing:
+                - sample_pred_bb (float): Black box model prediction for the sample
+                - sample_pred (float): Explainer model prediction for the sample
+                - accuracy_val (float): Validation accuracy of the explainer model (-1 if error)
+                - f1_val (float): Validation F1 score of the explainer model (-1 if error)
+                - explanation (list[str]): Generated explanation features (-1 if error)
+                - index (int): Original sample index
+                - time (dict[str, float]): Dictionary with timing information for different phases
+
+        Raises:
+            Exception: Any error during processing is caught and logged, returning error values
+
+        """
         if index % 100 == 0:
             logger.info(f"Explaining sample {index}")
         # Process one sample from the test data.
@@ -138,7 +169,7 @@ if __name__ == "__main__":
         sample = test_data.iloc[[index]]
         x_sample = torch.tensor([x[index]])
         y_sample = torch.tensor([y[index]])
-        sample_pred_bb = make_predictions(x_sample, y_sample, bb)
+        sample_pred_bb, model_confidence = make_predictions(x_sample, y_sample, bb)
 
         start_ranking_time = datetime.datetime.now()
         top_k_samples = find_top_closest_rows(
@@ -147,7 +178,6 @@ if __name__ == "__main__":
             k=args.top_k,
             y_name=outcome_variable,
         )
-        # print("len top_k:", len(top_k_samples))
 
         X, Y, old_x = prepare_neighbours(top_k_samples=top_k_samples, y_name=outcome_variable)
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
@@ -168,11 +198,24 @@ if __name__ == "__main__":
             total_time = explanation_time + ranking_time
 
             time = {"total_time": total_time, "ranking_time": ranking_time, "explanation_time": explanation_time}
-            y_pred = explainer_model.predict(x_test)
-            accuracy_val = accuracy_score(y_test, y_pred)
-            f1_val = f1_score(y_test, y_pred, average="weighted")
 
-            return sample_pred_bb[0].item(), sample_pred[0], accuracy_val, f1_val, explanation, index, time
+            # The accuracy and f1 score are computed on the test set of the neighbors.
+            # This is the fidelity of the explanation on the neighbors.
+            y_pred = explainer_model.predict(x_test)
+            accuracy_test = accuracy_score(y_test, y_pred)
+            f1_test = f1_score(y_test, y_pred, average="weighted")
+
+            return (
+                sample_pred_bb[0].item(),
+                model_confidence[0].item(),
+                sample_pred[0],
+                accuracy_test,
+                f1_test,
+                explanation,
+                index,
+                time,
+                sample,
+            )
         except Exception as e:
             logger.error(f"Error processing sample: {index}")
             logger.error(e)
@@ -181,13 +224,15 @@ if __name__ == "__main__":
                 -1,
                 -1,
                 -1,
+                -1,
                 [],
                 index,
                 {"total_time": -1, "ranking_time": -1, "explanation_time": -1},
+                None,
             )
 
     # Run the processing in parallel.
-    num_samples = min(args.num_explained_instances, len(test_data))
+    num_samples: Any | int = min(args.num_explained_instances, len(test_data))
     args_list = [
         (i, test_data, x, y, bb, args, synthetic_data, outcome_variable)
         for i in range(num_samples if args.explained_samples is None else args.explained_samples)
@@ -195,9 +240,17 @@ if __name__ == "__main__":
     with Pool(args.num_processes) as pool:
         results = pool.starmap(process_sample, args_list)
 
-    predictions_bb, predictions_dt, accuracy, f1_score, explanations, indexes, times = map(
-        list, zip(*results, strict=False)
-    )
+    (
+        predictions_bb,
+        confidence_bb,
+        predictions_dt,
+        fidelity_neighbours,
+        f1_score,
+        explanations,
+        indexes,
+        times,
+        explained_samples,
+    ) = map(list, zip(*results, strict=False))
 
     failed_explanations = []
     for index, f1 in enumerate(f1_score):
@@ -209,11 +262,14 @@ if __name__ == "__main__":
         for index in failed_explanations:
             predictions_bb.pop(index)
             predictions_dt.pop(index)
-            accuracy.pop(index)
+            confidence_bb.pop(index)
+            fidelity_neighbours.pop(index)
             f1_score.pop(index)
             explanations.pop(index)
             indexes.pop(index)
             times.pop(index)
+            explained_samples.pop(index)
+
     # compute the fidelity
     fidelity = accuracy_score(predictions_bb, predictions_dt)
     logger.info(f"Fidelity for file {synthetic_data_path.name}: {fidelity}")
@@ -230,9 +286,9 @@ if __name__ == "__main__":
     wandb_run.log(
         {
             "Fidelity": fidelity,
-            "Tree Accuracy": np.mean(accuracy),
+            "Tree Accuracy": np.mean(fidelity_neighbours),
             "Tree F1 Score": np.mean(f1_score),
-            "Tree Accuracy Std": np.std(accuracy),
+            "Tree Accuracy Std": np.std(fidelity_neighbours),
             "Tree F1 Score Std": np.std(f1_score),
             "Total Time (sec)": np.mean(total_time),
             "Total Time Std (sec)": np.std(total_time),
@@ -249,7 +305,14 @@ if __name__ == "__main__":
 
     computed_explanations = {}
     for index, current_index in enumerate(indexes):
-        computed_explanations[current_index] = (explanations[index], predictions_bb[index])
+        computed_explanations[current_index] = {
+            "sample": explained_samples[index],
+            "explanation": explanations[index],
+            "prediction_bb": predictions_bb[index],
+            "confidence_bb": confidence_bb[index],
+            "fidelity_neighbours": fidelity_neighbours[index],
+            "fidelity": 1 if predictions_bb[index] == predictions_dt[index] else 0,
+        }
 
     # serialize the explanations
     file_name = (

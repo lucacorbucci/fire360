@@ -7,6 +7,17 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
+from loguru import logger
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import (
+    MinMaxScaler,
+)
+from torch.utils.data import (
+    DataLoader,
+    TensorDataset,
+)
+
 from fire360.bb_architectures import MultiClassModel, SimpleModel
 from fire360.utils import (
     prepare_adult,
@@ -18,16 +29,6 @@ from fire360.utils import (
     prepare_letter,
     prepare_pima,
     prepare_shuttle,
-)
-from loguru import logger
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import (
-    MinMaxScaler,
-)
-from torch.utils.data import (
-    DataLoader,
-    TensorDataset,
 )
 
 
@@ -180,9 +181,25 @@ def find_top_closest_rows(synthetic_data: pd.DataFrame, sample: pd.DataFrame, k:
     return pd.DataFrame(top_k_samples)
 
 
-def make_predictions(x: pd.DataFrame, y: pd.DataFrame, bb: torch.nn.Module) -> list[torch.tensor]:
+def make_predictions(
+    x: torch.Tensor, y: torch.Tensor, bb: torch.nn.Module
+) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+    """
+    Make predictions using the black-box model and calculate confidence scores.
+
+    Args:
+        x: The input features.
+        y: The input labels (used for creating DataLoader, not for prediction logic itself).
+        bb: The black-box model.
+
+    Returns:
+        A tuple containing:
+            - predictions: A list of predicted class labels (as tensors).
+            - confidences: A list of confidence scores for the predictions (as tensors).
+    """
     train_loader = create_torch_loader(batch_size=16, x_train=x, y_train=y)
     predictions = []
+    confidences = []
     with torch.no_grad():
         for data, target in train_loader:
             data, target = (
@@ -190,10 +207,17 @@ def make_predictions(x: pd.DataFrame, y: pd.DataFrame, bb: torch.nn.Module) -> l
                 target.to("cuda" if torch.cuda.is_available() else "cpu"),
             )
             outputs = bb(data)
-            predicted = outputs.argmax(dim=1, keepdim=True)
-            predictions.extend(predicted)
+            # Get probabilities using softmax
+            probabilities = torch.softmax(outputs, dim=1)
+            # Get the predicted class
+            predicted_class = outputs.argmax(dim=1, keepdim=True)
+            # Get the confidence for the predicted class
+            confidence = probabilities.gather(1, predicted_class)
 
-    return predictions
+            predictions.extend(predicted_class)
+            confidences.extend(confidence)
+
+    return predictions, confidences
 
 
 def evaluate_bb(x: np.array, y: np.array, bb: torch.nn.Module) -> list[int]:
@@ -210,7 +234,8 @@ def evaluate_bb(x: np.array, y: np.array, bb: torch.nn.Module) -> list[int]:
         None
 
     """
-    predictions = [prediction.item() for prediction in make_predictions(x, y, bb)]
+    predictions_list, confidences_list = make_predictions(x, y, bb)
+    predictions = [prediction.item() for prediction in predictions_list]
     accuracy = accuracy_score(y, predictions)
     f1 = f1_score(y, predictions, average="weighted")
     logger.info(f"Accuracy: {accuracy} - F1: {f1}")
