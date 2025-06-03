@@ -1,5 +1,5 @@
 [project]
-name = "synth-xai"
+name = "fire360"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -32,10 +32,11 @@ dependencies = [
     "bitarray>=3.1.0",
     "memray>=1.16.0",
     "seaborn>=0.13.2",
+    "ty>=0.0.1a8",
 ]
 
 [project.scripts]
-synth-xai = "synth_xai:main"
+fire360 = "fire360:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -46,7 +47,7 @@ build-backend = "hatchling.build"
 my_base_project = { path = "./src/" }
 
 [tool.uv.workspace]
-members = ["synth_xai"]
+members = ["fire360"]
 
 
 [tool.ruff]
