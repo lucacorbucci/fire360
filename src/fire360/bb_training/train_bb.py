@@ -11,13 +11,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
+from fire360.bb_architectures import MultiClassModel, SimpleModel
+from fire360.utils import get_optimizer, prepare_data
 from loguru import logger
 from sklearn.metrics import f1_score
 from tqdm.auto import tqdm
-
-import wandb
-from synth_xai.bb_architectures import MultiClassModel, SimpleModel
-from synth_xai.utils import get_optimizer, prepare_data
 
 warnings.simplefilter("ignore")
 

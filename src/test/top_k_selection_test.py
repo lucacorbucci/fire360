@@ -3,8 +3,7 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 import pytest
-
-from synth_xai.explanations.explanation_utils import find_top_closest_rows
+from fire360.explanations.explanation_utils import find_top_closest_rows
 
 
 def test_find_top_closest_rows() -> None:

@@ -5,17 +5,15 @@ import numpy as np
 import pandas as pd
 import torch
 from aix360.metrics.local_metrics import faithfulness_metric
-from sklearn.tree import DecisionTreeClassifier
-
-from synth_xai.explanations.decision_tree import (
+from fire360.explanations.decision_tree import (
     compute_robustness_dt,
     compute_stability_dt,
     extract_rule_dt,
     grid_search_dt,
     parse_explanation_dt,
 )
-from synth_xai.explanations.knn import extract_knn_explanation, grid_search_knn
-from synth_xai.explanations.logistic_regression import (
+from fire360.explanations.knn import extract_knn_explanation, grid_search_knn
+from fire360.explanations.logistic_regression import (
     compute_robustness_lr,
     compute_stability_lr,
     extract_logistic_explanation,
@@ -23,7 +21,7 @@ from synth_xai.explanations.logistic_regression import (
     parse_coefficients_lr,
     parse_explanation_lr,
 )
-from synth_xai.explanations.svm import (
+from fire360.explanations.svm import (
     compute_robustness_svm,
     compute_stability_svm,
     extract_svm_explanation,
@@ -31,7 +29,8 @@ from synth_xai.explanations.svm import (
     parse_coefficients_svm,
     parse_explanation_svm,
 )
-from synth_xai.utils import aix_model
+from fire360.utils import aix_model
+from sklearn.tree import DecisionTreeClassifier
 
 
 class ExplainerModel:

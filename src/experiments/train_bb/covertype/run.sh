@@ -1,1 +1,1 @@
-uv run python ../../../synth_xai/bb_training/train_bb.py --shuffle_seed 3 --batch_size=52 --lr=0.09256954362659872 --optimizer=sgd --epochs 10 --project_name Tango_BB --dataset_name covertype --save_model True --model_name covertype_bb
+uv run python ../../../fire360/bb_training/train_bb.py --shuffle_seed 3 --batch_size=52 --lr=0.09256954362659872 --optimizer=sgd --epochs 10 --project_name Tango_BB --dataset_name covertype --save_model True --model_name covertype_bb

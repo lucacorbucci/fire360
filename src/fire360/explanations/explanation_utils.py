@@ -7,19 +7,8 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from loguru import logger
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import (
-    MinMaxScaler,
-)
-from torch.utils.data import (
-    DataLoader,
-    TensorDataset,
-)
-
-from synth_xai.bb_architectures import MultiClassModel, SimpleModel
-from synth_xai.utils import (
+from fire360.bb_architectures import MultiClassModel, SimpleModel
+from fire360.utils import (
     prepare_adult,
     prepare_breast_cancer,
     prepare_covertype,
@@ -29,6 +18,16 @@ from synth_xai.utils import (
     prepare_letter,
     prepare_pima,
     prepare_shuttle,
+)
+from loguru import logger
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import (
+    MinMaxScaler,
+)
+from torch.utils.data import (
+    DataLoader,
+    TensorDataset,
 )
 
 

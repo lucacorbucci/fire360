@@ -8,6 +8,9 @@ import numpy as np
 import pandas as pd
 import shap
 import torch
+from fire360.bb_architectures import MultiClassModel, SimpleModel
+from fire360.explanations.explanation_utils import load_bb
+from fire360.utils import prepare_adult
 from lime.lime_tabular import LimeTabularExplainer
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import (
@@ -17,9 +20,6 @@ from sklearn.preprocessing import (
 from lore_sa.bbox import sklearn_classifier_bbox
 from lore_sa.dataset import TabularDataset
 from lore_sa.lore import TabularGeneticGeneratorLore, TabularRandomGeneratorLore
-from synth_xai.bb_architectures import MultiClassModel, SimpleModel
-from synth_xai.explanations.explanation_utils import load_bb
-from synth_xai.utils import prepare_adult
 
 
 class MyModel:

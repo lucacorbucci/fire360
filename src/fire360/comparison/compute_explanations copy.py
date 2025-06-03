@@ -4,8 +4,8 @@ default_n_threads = 64
 os.environ["OPENBLAS_NUM_THREADS"] = f"{default_n_threads}"
 os.environ["MKL_NUM_THREADS"] = f"{default_n_threads}"
 os.environ["OMP_NUM_THREADS"] = f"{default_n_threads}"
-
 import argparse
+import copy
 import datetime
 import random
 import signal
@@ -19,23 +19,22 @@ import dill
 import multiprocess
 import numpy as np
 import torch
+from fire360.bb_architectures import MultiClassModel, SimpleModel
+from fire360.comparison.explainer import Explainer
+from fire360.comparison.utils_comparison import prepare_data
+from fire360.explanations.explanation_utils import (
+    load_bb,
+    make_predictions,
+    setup_wandb,
+)
+from fire360.utils import (
+    aix_model,
+)
 from loguru import logger
 from multiprocess import Pool
 from scipy.stats import sem
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.metrics import accuracy_score
-
-from synth_xai.bb_architectures import MultiClassModel, SimpleModel
-from synth_xai.comparison.explainer import Explainer
-from synth_xai.comparison.utils_comparison import prepare_data
-from synth_xai.explanations.explanation_utils import (
-    load_bb,
-    make_predictions,
-    setup_wandb,
-)
-from synth_xai.utils import (
-    aix_model,
-)
 
 warnings.simplefilter("ignore")
 
@@ -52,7 +51,6 @@ parser.add_argument("--k_means_k", type=int, default=100)
 parser.add_argument("--store_path", type=str, default=None, required=True)
 parser.add_argument("--num_explained_instances", type=int, default=20000)
 parser.add_argument("--project_name", type=str, default="comparison_tango")
-parser.add_argument("--neigh_size", type=int, default=5000)
 
 
 def signal_handler(_sig: int, frame: FrameType | None) -> None:
@@ -109,18 +107,19 @@ if __name__ == "__main__":
         train_df.columns.get_loc(col) for col in categorical_feature_names if col in train_df.columns
     ]
 
-    explainer = Explainer(
-        args=args,
-        x_train=x_train,
-        feature_names=feature_names,
-        categorical_feature_names=categorical_feature_names,
-        class_names=class_names,
-        model=model,
-        k_means_k=args.k_means_k,
-        train_df=train_df,
-        target_name=outcome_variable_name,
-        lore_generator=args.lore_generator if args.lore_generator else None,
-    )
+    # explainer = Explainer(
+    #     args=args,
+    #     x_train=x_train,
+    #     feature_names=feature_names,
+    #     categorical_feature_names=categorical_feature_names,
+    #     class_names=class_names,
+    #     model=model,
+    #     k_means_k=args.k_means_k,
+    #     train_df=train_df,
+    #     target_name=outcome_variable_name,
+    #     lore_generator=args.lore_generator if args.lore_generator else None,
+    # )
+    explainer = None
     multiprocess.set_start_method("spawn")
     num_samples = min(args.num_explained_instances, len(test_data))
 
@@ -135,9 +134,17 @@ if __name__ == "__main__":
         args: argparse.Namespace,
         lore_x_sample: np.ndarray = None,
         lore_y_sample: int = None,
+        x_train=None,
+        feature_names=None,
+        categorical_feature_names=None,
+        class_names=None,
+        train_df=None,
+        outcome_variable_name=None,
     ) -> tuple[list, int, int, list]:
         if index % 100 == 0:
             logger.info(f"Explaining sample {index}")
+        x_train_ = copy.deepcopy(x_train)
+
         x_sample = torch.tensor([sample if lore_x_sample is None else lore_x_sample], dtype=torch.float32)
         y_sample = torch.tensor([y_sample if lore_y_sample is None else lore_y_sample], dtype=torch.float32)
 
@@ -151,16 +158,26 @@ if __name__ == "__main__":
 
         start_explanation_time = datetime.datetime.now()
 
-        explanation, local_pred, feat_in_the_rule, fidelity_method = explainer.explain_instance(
-            sample,
-            predict_fn,
-            sample_pred_bb[0].item(),
-            neigh_size=args.neigh_size,
+        explainer = Explainer(
+            args=args,
+            x_train=x_train_,
+            feature_names=feature_names,
+            categorical_feature_names=categorical_feature_names,
+            class_names=class_names,
+            model=model,
+            k_means_k=args.k_means_k,
+            train_df=train_df,
+            target_name=outcome_variable_name,
+            lore_generator=args.lore_generator if args.lore_generator else None,
+        )
+
+        explanation, local_pred, feat_in_the_rule = explainer.explain_instance(
+            sample, predict_fn, sample_pred_bb[0].item()
         )
 
         end_time = datetime.datetime.now()
         total_time = (end_time - start_explanation_time).total_seconds()
-        return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index, fidelity_method
+        return explanation, sample_pred_bb[0].item(), local_pred, feat_in_the_rule, total_time, index
 
     if args.explanation_type == "lore":
         args_list = [
@@ -189,6 +206,14 @@ if __name__ == "__main__":
                 len(feature_names),
                 sample_idx,
                 args,
+                None,
+                None,
+                x_train,
+                feature_names,
+                categorical_feature_names,
+                class_names,
+                train_df,
+                outcome_variable_name,
             )
             for sample_idx in range(num_samples)
         ]
@@ -196,7 +221,7 @@ if __name__ == "__main__":
     with Pool(args.num_processes) as pool:
         results = pool.starmap(explain_sample, args_list)
 
-    explanations, predictions_bb, local_predictions, features_in_the_rule, times, indexes, fidelity_method = map(
+    explanations, predictions_bb, local_predictions, features_in_the_rule, times, indexes = map(
         list, zip(*results, strict=False)
     )
     computed_explanations = {}
@@ -223,15 +248,12 @@ if __name__ == "__main__":
     wandb_run.log(
         {
             "fidelity": fidelity,
-            "fidelity_method": np.mean(fidelity_method) if all(fidelity_method) else 0,
-            "fidelity_method_std": np.std(fidelity_method) if all(fidelity_method) else 0,
             # "Total Time": np.mean(times),
             # "Total Time Std": np.std(times),
             # "Total Time sem": sem(times),
             "Total Time (sec)": np.mean(times),
             "Total Time Std (sec)": np.std(times),
             "Total Time sem (sec)": sem(times),
-            "neigh_size": args.neigh_size,
         }
     )
     logger.info(f"Final Fidelity: {fidelity}")

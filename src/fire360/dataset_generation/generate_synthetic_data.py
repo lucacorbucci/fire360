@@ -16,6 +16,17 @@ from types import FrameType
 import dill
 import pandas as pd
 import wandb
+from fire360.utils import (
+    prepare_adult,
+    prepare_breast_cancer,
+    prepare_covertype,
+    prepare_diabetes,
+    prepare_dutch,
+    prepare_house16,
+    prepare_letter,
+    prepare_pima,
+    prepare_shuttle,
+)
 from loguru import logger
 from sdv.metadata import Metadata
 from sdv.single_table import CTGANSynthesizer, TVAESynthesizer
@@ -53,18 +64,6 @@ from synthcity.metrics.eval_statistical import (
     WassersteinDistance,
 )
 from synthcity.plugins.core.dataloader import GenericDataLoader
-
-from synth_xai.utils import (
-    prepare_adult,
-    prepare_breast_cancer,
-    prepare_covertype,
-    prepare_diabetes,
-    prepare_dutch,
-    prepare_house16,
-    prepare_letter,
-    prepare_pima,
-    prepare_shuttle,
-)
 
 parser = argparse.ArgumentParser(description="Training")
 parser.add_argument("--dataset_name", type=str, default=None)

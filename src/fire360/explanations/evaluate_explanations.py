@@ -21,11 +21,10 @@ from explanation_utils import (
     setup_wandb,
     transform_input_data,
 )
+from fire360.bb_architectures import MultiClassModel, SimpleModel  # DO NOT REMOVE
+from fire360.explanations.explainer_model import ExplainerModel
 from loguru import logger
 from multiprocess import Pool
-
-from synth_xai.bb_architectures import MultiClassModel, SimpleModel  # DO NOT REMOVE
-from synth_xai.explanations.explainer_model import ExplainerModel
 
 warnings.simplefilter("ignore")
 

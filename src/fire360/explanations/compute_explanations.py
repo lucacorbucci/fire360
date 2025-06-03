@@ -38,8 +38,8 @@ from sklearn.preprocessing import (
     MinMaxScaler,
 )
 
-from synth_xai.bb_architectures import MultiClassModel, SimpleModel
-from synth_xai.explanations.explainer_model import ExplainerModel
+from fire360.bb_architectures import MultiClassModel, SimpleModel
+from fire360.explanations.explainer_model import ExplainerModel
 
 warnings.simplefilter("ignore")
 
@@ -234,13 +234,6 @@ if __name__ == "__main__":
             "Tree F1 Score": np.mean(f1_score),
             "Tree Accuracy Std": np.std(accuracy),
             "Tree F1 Score Std": np.std(f1_score),
-            # "Total Time": np.mean(total_time),
-            # "Total Time Std": np.std(total_time),
-            # "Total Time sem": sem(total_time),
-            # "Ranking Time": np.mean(ranking_time),
-            # "Ranking Time Std": np.std(ranking_time),
-            # "Explanation Time": np.mean(explanation_time),
-            # "Explanation Time Std": np.std(explanation_time),
             "Total Time (sec)": np.mean(total_time),
             "Total Time Std (sec)": np.std(total_time),
             "Total Time sem (sec)": sem(total_time),
