@@ -7,6 +7,17 @@ import numpy as np
 import pandas as pd
 import torch
 from datasets import load_dataset
+from fire360.utils import (
+    prepare_adult,
+    prepare_breast_cancer,
+    prepare_covertype,
+    prepare_diabetes,
+    prepare_dutch,
+    prepare_house16,
+    prepare_letter,
+    prepare_pima,
+    prepare_shuttle,
+)
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from scipy.io import arff
@@ -21,18 +32,6 @@ from torch import optim
 from torch.utils.data import (
     DataLoader,
     TensorDataset,
-)
-
-from synth_xai.utils import (
-    prepare_adult,
-    prepare_breast_cancer,
-    prepare_covertype,
-    prepare_diabetes,
-    prepare_dutch,
-    prepare_house16,
-    prepare_letter,
-    prepare_pima,
-    prepare_shuttle,
 )
 
 

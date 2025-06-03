@@ -1,1 +1,1 @@
-uv run python /home/lcorbucci/synth_xai/src/synth_xai/dataset_generation/generate_synthetic_data.py --dataset_name covertype --samples_to_generate 200000 400000 600000  --synthesizer_name ctgan --epochs 1000 2500 --store_path ../../../../artifacts/
+uv run python /home/lcorbucci/fire360/src/fire360/dataset_generation/generate_synthetic_data.py --dataset_name covertype --samples_to_generate 200000 400000 600000  --synthesizer_name ctgan --epochs 1000 2500 --store_path ../../../../artifacts/

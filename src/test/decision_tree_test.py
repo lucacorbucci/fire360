@@ -2,8 +2,7 @@ import re
 from collections import Counter
 
 import pytest
-
-from synth_xai.explanations.decision_tree import compute_stability_dt, parse_explanation_dt
+from fire360.explanations.decision_tree import compute_stability_dt, parse_explanation_dt
 
 
 @pytest.mark.parametrize(

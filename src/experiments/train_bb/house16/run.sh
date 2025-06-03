@@ -1,1 +1,1 @@
-uv run python ../../../synth_xai/bb_training/train_bb.py --shuffle_seed 3 --batch_size=49 --lr=0.028977425730221253 --optimizer=adam --epochs 10 --project_name Tango_BB --dataset_name house16 --save_model True --model_name house16_bb
+uv run python ../../../fire360/bb_training/train_bb.py --shuffle_seed 3 --batch_size=49 --lr=0.028977425730221253 --optimizer=adam --epochs 10 --project_name Tango_BB --dataset_name house16 --save_model True --model_name house16_bb

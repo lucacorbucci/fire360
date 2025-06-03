@@ -1,8 +1,7 @@
 import re
 
 import pytest
-
-from synth_xai.explanations.logistic_regression import compute_stability_lr, parse_explanation_lr
+from fire360.explanations.logistic_regression import compute_stability_lr, parse_explanation_lr
 
 
 @pytest.mark.parametrize(
