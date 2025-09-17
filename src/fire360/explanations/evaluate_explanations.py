@@ -64,6 +64,7 @@ def preprocess_explanations(args: argparse.Namespace, explanation_data: list) ->
 
         def parse_explanation(index: int) -> tuple[int, list, list] | bool:
             try:
+                # if type(explanation_data[0][index]) == tuple:
                 return (
                     index,
                     explainer_model.parse_explanation(str(explanation_data[0][index]["explanation"])),
@@ -71,7 +72,7 @@ def preprocess_explanations(args: argparse.Namespace, explanation_data: list) ->
                 )
             except Exception as e:
                 logger.error(
-                    f"Error processing index {index}: {e}, Explanation 0: {explanation_data[0][index]['explanation']}, Explanation 1: {explanation_data[1][index]['explanation']}"
+                    f"Error processing index {index}: {e}, Explanation 0: {explanation_data[0][index]}, Explanation 1: {explanation_data[1][index]['explanation']}"
                 )
                 return False
 

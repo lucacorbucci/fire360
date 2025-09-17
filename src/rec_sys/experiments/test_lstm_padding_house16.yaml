@@ -1,0 +1,45 @@
+program: rec_sys.py
+method: bayes
+metric:
+  name: val_loss
+  goal: minimize
+early_terminate:
+  type: hyperband
+  min_iter: 3
+parameters:
+  hidden_size:
+    min: 32
+    max: 512
+  batch_size:
+    min: 64
+    max: 256
+  lr:
+    min: 0.001
+    max: 0.1
+  dropout:
+    min: 0.1
+    max: 0.3
+  num_epochs:
+    min: 20
+    max: 200
+  model:
+    values: ["gru"]
+command:
+  - ${env}
+  - uv
+  - run
+  - python
+  - ${program}
+  - ${args}
+  - --sweep
+  - True
+  - --project_name
+  - Tango_personalization
+  - --seed
+  - "42"
+  - --train_path
+  - ../data/train_house16.csv
+  - --test_path
+  - ../data/test_house16.csv
+  - --include_previous_targets
+  - "True"
