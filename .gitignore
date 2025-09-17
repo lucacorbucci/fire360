@@ -28,3 +28,4 @@ src/synth_xai/comparison/adult.data
 src/synth_xai/comparison/compute_explanations copy.py
 !src/examples/example_bb/dutch_BB.pth
 !src/examples/example_synthetic_data/synthetic_data.csv
+!logo.png
