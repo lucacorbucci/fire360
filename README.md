@@ -1,5 +1,13 @@
 # FIRE360
 
+<!-- markdownlint-disable MD033 MD041 MD002 -->
+<!-- markdownlint-disable commands-show-output no-duplicate-heading -->
+<!-- spell-checker:ignore markdownlint ; (options) DESTDIR UTILNAME manpages reimplementation oranda -->
+<div class="oranda-hide">
+<div align="center">
+
+![fire360 logo](logo.png)
+
 A comprehensive and fast local explanation approach tailored for tabular data.
 
 ## How to use
