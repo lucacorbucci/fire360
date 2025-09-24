@@ -3,73 +3,168 @@
 <!-- markdownlint-disable MD033 MD041 MD002 -->
 <!-- markdownlint-disable commands-show-output no-duplicate-heading -->
 <!-- spell-checker:ignore markdownlint ; (options) DESTDIR UTILNAME manpages reimplementation oranda -->
-<div class="oranda-hide">
 <div align="center">
 
 ![fire360 logo](logo.png)
 
 A comprehensive and fast local explanation approach tailored for tabular data.
 
-## How to use
+[![PyPI](https://img.shields.io/pypi/v/fire360)](https://pypi.org/project/fire360/)
+[![Python](https://img.shields.io/pypi/pyversions/fire360)](https://pypi.org/project/fire360/)
+[![License](https://img.shields.io/github/license/lucacorbucci/fire360)](https://github.com/lucacorbucci/fire360/blob/main/LICENSE)
 
-You can find an example of how to use FIRE360 in the `example` folder. 
+</div>
 
-## Dataset Pre-Processing 
+## Description
+
+FIRE360 is a Python library for generating local explanations of black-box machine learning models on tabular data. It uses surrogate models trained on synthetic data neighborhoods to provide interpretable explanations while maintaining high fidelity to the original black-box predictions.
+
+## Features
+
+- **Multiple Surrogate Models**: Support for Decision Trees, Logistic Regression, SVM, and KNN as surrogate explainers
+- **Synthetic Data Generation**: Uses CTGAN and TVAE for generating synthetic datasets to create explanation neighborhoods
+- **Evaluation Metrics**: Computes fidelity, robustness, and stability of explanations
+- **Benchmarking**: Includes comparison tools with state-of-the-art explainers like LIME, SHAP, and LORE
+- **Extensible Architecture**: Easy to add new surrogate models and evaluation metrics
+- **Comprehensive Datasets**: Pre-configured support for Adult, Dutch, Covertype, House16, Letter, and Shuttle datasets
+
+## Installation
+
+### Prerequisites
+
+- Python >= 3.10, < 3.13
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) for dependency management
+
+### Install uv
+
+You can install uv using one of the following methods:
+
+```bash
+# Using pipx
+pipx install uv
+
+# Using curl
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Using wget
+wget -qO- https://astral.sh/uv/install.sh | sh
+```
+
+For more details, visit the [uv documentation](https://docs.astral.sh/uv/getting-started/installation/).
+
+### Install FIRE360
+
+```bash
+# Clone the repository
+git clone https://github.com/lucacorbucci/fire360.git
+cd fire360
+
+# Install dependencies and the package
+uv sync
+```
+
+## Quick Start
+
+Here's a basic example of how to use FIRE360 to explain a black-box model prediction:
+
+```python
+from fire360.explanations.explainer_model import ExplainerModel
+from fire360.explanations.explanation_utils import (
+    load_bb, load_synthetic_data, label_synthetic_data,
+    find_top_closest_rows, prepare_neighbours
+)
+import pandas as pd
+
+# Load your trained black-box model
+bb_model = load_bb("path/to/black_box_model.pth")
+
+# Load and prepare synthetic data
+synthetic_data = load_synthetic_data("path/to/synthetic_data.csv")
+synthetic_data = label_synthetic_data(synthetic_data, "target_column", bb_model, scaler)
+
+# Select a sample to explain
+sample = test_data.iloc[[0]]  # Your test sample
+
+# Find similar samples from synthetic data
+neighborhood = find_top_closest_rows(synthetic_data, sample, k=1000, y_name="target_column")
+X_neigh, y_neigh, _ = prepare_neighbours(neighborhood, "target_column")
+
+# Create explainer and generate explanation
+explainer = ExplainerModel(explainer_type="dt")  # or "logistic", "svm", "knn"
+explainer.grid_search(X_neigh, y_neigh, seed=42)
+
+sample_pred, explanation, threshold, feature = explainer.extract_explanation(
+    explainer.best_model, "target_column", sample
+)
+
+print(f"Explanation: {explanation}")
+```
+
+For a complete working example, see [`src/examples/fire360_example.ipynb`](src/examples/fire360_example.ipynb).
+
+## API Reference
+
+### Core Classes
+
+#### `ExplainerModel`
+
+Main class for generating explanations using different surrogate models.
+
+**Parameters:**
+- `explainer_type` (str): Type of surrogate model ("dt", "logistic", "svm", "knn")
+
+**Methods:**
+- `grid_search(x_train, y_train, seed)`: Perform hyperparameter tuning
+- `extract_explanation(model, y_name, sample)`: Generate explanation for a sample
+- `predict(x_test)`: Make predictions with the surrogate model
+- `compute_stability(explanations)`: Calculate explanation stability
+- `compute_robustness(top_k_samples)`: Calculate explanation robustness
+- `compute_faithfulness(x_test, y_test)`: Calculate faithfulness metric
+
+### Utility Functions
+
+Located in `fire360.explanations.explanation_utils`:
+
+- `load_bb(model_path)`: Load a pre-trained black-box model
+- `load_synthetic_data(data_path)`: Load synthetic dataset
+- `label_synthetic_data(synthetic_data, outcome_variable, bb, scaler)`: Label synthetic data with BB predictions
+- `find_top_closest_rows(synthetic_data, sample, k, y_name)`: Find k most similar samples
+- `prepare_neighbours(top_k_samples, y_name)`: Prepare neighborhood data for training
+- `evaluate_bb(x, y, bb)`: Evaluate black-box model accuracy
 
 
-We evaluated FIRE360 on six datasets: Adult, Dutch, Covertype, House16, Letter, and Shuttle.
-For each dataset, we performed the following pre-processing: 
-* Adult: we encoded the categorical variables using OneHot encoding, and then we applied a MinMaxScaler.
-* Dutch is a numeric dataset, therefore, we only used a MinMaxScaler.
-* For Letter, since all the variables were numerical, we only used a MinMaxScaler.
-* For Shuttle, since all the variables were numerical, we only used a MinMaxScaler.
-* House16, since all the variables were numerical, we only used a MinMaxScaler.
-* For Covertype, we converted the categorical variables using OneHot encoding, and then we applied a MinMaxScaler.
 
-## Training of the black-box models
+## Generating Synthetic Data
 
-To simulate the entire explanation pipeline, we trained a black-box model for each dataset we used to evaluate FIRE360. In particular, we tune all hyperparameters for each dataset using Bayesian optimization implemented in Weights & Biases, maximizing model accuracy. The tuned hyperparameters are the following: batch size (we tested values in the range 16-64), learning rate (values between 0.0001 and 0.1) and optimizer (with ``Adam'' and ``SGD'' as possible values).
+Synthetic datasets are generated using CTGAN and TVAE from the SDV library. Recommended training epochs:
+- CTGAN: 2500 epochs
+- TVAE: 2500 epochs
 
+Scripts are available in `src/experiments/train_synth/` for generating synthetic data for each dataset.
 
-We used two different neural network architectures, one for the datasets with binary classification tasks (Adult, Dutch and House16) and one for the multiclass datasets (Letter, Covertype and Shuttle). In particular, for the binary case, we used a basic feedforward neural network with a single layer with 32 units followed by a Rectified Linear Unit (ReLU) activation function. For multiclass datasets, we used a feedforward neural network with 2 layers, the first one with 32 and the second with 64 hidden units. Both of them are followed by the ReLU activation function. 
+## Evaluation and Comparison
 
+FIRE360 includes comprehensive evaluation tools:
 
-## Training the synthethisers
+- **Explanation Quality**: Fidelity, robustness, stability
+- **Comparison with Baselines**: LIME, SHAP, LORE (genetic)
 
-We trained the synthesizers using CTGAN and TVAE. In particular, following the suggestions of the developers of the [SDV library](https://docs.sdv.dev/sdv/single-table-data/modeling/synthesizers/ctgansynthesizer\#how-do-i-tune-the-hyperparameters-such-as-epochs-or-other-values), we trained the synthesizers using three possible values for the number of epochs (1000, 2500 and 5000). We report here in the Appendix two plots of the training losses obtained when training the synthesizers on Adult and Letter. In particular, in Figure~\ref{fig:adult_ctgan} and Figure~\ref{fig:letter_ctgan}, we show the losses of the discriminator and of the generator obtained when using the Adult dataset. As you can see, increasing the number of epochs of the training of the synthesizers has no visible impact on the two losses. Therefore, we decided to use 2500 epochs to create our final synthetic dataset using the CTGAN. 
-We report in Figure~\ref{fig:tvae_losses} a similar plot with the losses obtained when training the TVAE synthesizers with Adult and Letter. Even in this case, there is no big difference between the possible values of the epochs.
+Scripts for evaluation are in `src/experiments/evaluate_explanations/`.
 
-Loss of the discriminator and of the generator obtained when training the CTGAN with the Adult Dataset. Increasing the number of epochs has no visible impact on the two losses: 
+## Visualization Dashboard
 
-![Loss of the discriminator and of the generator obtained when training the CTGAN with the Adult Dataset. Increasing the number of epochs has no visible impact on the two losses](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/adult_ctgan_losses.png?raw=true)
+A dashboard for visualizing explanations is available at: [FIRE360 Dashboard](https://heroic-dasik-a43ca2.netlify.app/).
 
-Loss of the discriminator and of the generator obtained when training the CTGAN with the Letter Dataset. Increasing the number of epochs has no visible impact on the two losses.:
+Code for the dashboard can be found in the `UI` folder.
 
-![Loss of the discriminator and of the generator obtained when training the CTGAN with the Letter Dataset. Increasing the number of epochs has no visible impact on the two losses.](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/letter_ctgan_losses.png?raw=true)
+## Contributing
 
-Adult tvae:
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-![Adult tvae](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/adult_tvae_loss.png?raw=true)
+## License
 
-Letter tvae: 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-![Letter tvae](https://github.com/lucacorbucci/fire360/blob/main/images/gan_losses/letter_tvae_loss.png?raw=true)
+## Citation
 
-
-
-
-
-## Surrogate models grid search
-
-Before training the surrogate white-box, we perform a simple grid search to ensure that it performs well. To perform the grid search we divided the dataset $\chi$ composed of samples taken from the synthetic dataset into two parts: train which represent the 80% of the dataset and test which represents the 20\%. For each grid search, we performed a KFold cross-validation with n_splits=5.
-More specifically, in the grid search, we considered the following hyperparameters:
-* Logistic Regression: We searched for two possible values of penalty (``l1'' and ``l2''), two values for the class\_weight (None and ``balanced'') and three values for the hyperparameter C (0.01, 0.1 and 1).
-* SVM: We searched for 5 possible values of the parameter C (0.01, 0.1, 1, 10 and 100), two values of class\_weight (None and ``balanced'')
-* KNN: We searched for 4 possible values of n\_neighbors (3, 5, 7, 9), two values of weights (``uniform'', ``distance'') and two values of metric (``Euclidean'', ``manhattan'')
-* Decision Tree: We searched for 2 possible values of criterion (``gini'' and ``entropy''), four values of max\_depth (3, 5, 7 and 10), four values of min\_samples\_leaf (1, 2, 5 and 10) and two values of class\_weight (None, and ``balanced'').
-
-
-
-## Visualization of the results
-
-We created a simple dashboard to visualize all the explanations computed with our approach. You can find the code in the `UI` folder, the dashboard is also available here: [FIRE360 Dashboard](https://heroic-dasik-a43ca2.netlify.app/).
+Paper will be available soon.
